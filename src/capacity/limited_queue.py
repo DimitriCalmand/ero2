@@ -1,11 +1,6 @@
 """
 Module Capacity - Gestion des Capacités et Files Finies
 Étudiant 2: Gestion des Capacités (Scénario Waterfall)
-
-Ce module implémente:
-- Files finies avec capacités ks (serveurs) et kf (file d'attente)
-- Logique de rejet (Loss System vs Queueing)
-- Analyse des taux de rejet (Page Blanche vs Erreur immédiate)
 """
 
 from __future__ import annotations
@@ -26,7 +21,7 @@ class LimitedQueue:
         self,
         env: simpy.Environment,
         queue_id: str,
-        max_queue_size: int,
+        max_queue_size: Optional[int],
         num_servers: int,
         logger: SimulationLogger,
         time_generator: Callable[[], float],
@@ -56,7 +51,6 @@ class LimitedQueue:
         self.total_arrivals = 0
         self.total_rejections = 0
         self.rejections_queue_full = 0  # File pleine
-        self.rejections_server_full = 0  # Serveurs pleins
         self.jobs_completed = 0
 
     @property
@@ -72,7 +66,10 @@ class LimitedQueue:
     @property
     def is_queue_full(self) -> bool:
         """Vérifie si la file d'attente est pleine"""
-        return len(self.resource.queue) >= self.max_queue_size
+        return (
+            self.max_queue_size is not None
+            and len(self.resource.queue) >= self.max_queue_size
+        )
 
     @property
     def is_server_full(self) -> bool:
@@ -114,7 +111,9 @@ class LimitedQueue:
 
         total_in_system = self.total_in_system
 
-        if total_in_system >= (self.num_servers + self.max_queue_size):
+        if self.max_queue_size is not None and total_in_system >= (
+            self.num_servers + self.max_queue_size
+        ):
             job.was_rejected = True
             job.rejection_reason = "queue_full"
             self.total_rejections += 1
@@ -174,125 +173,6 @@ class LimitedQueue:
             yield from self.on_done(job)
 
 
-class LossSystem:
-    """
-    Système avec perte immédiate (pas de file d'attente)
-    Rejet si tous les serveurs sont occupés
-    """
-
-    def __init__(
-        self,
-        env: simpy.Environment,
-        system_id: str,
-        num_servers: int,
-        logger: SimulationLogger,
-    ):
-        """
-        Args:
-            env: Environnement SimPy
-            system_id: Identifiant du système
-            num_servers: Nombre de serveurs (ks)
-            logger: Logger centralisé
-        """
-        self.env = env
-        self.system_id = system_id
-        self.num_servers = num_servers
-        self.logger = logger
-
-        # Resource sans file d'attente (capacité = nombre de serveurs)
-        self.resource = simpy.Resource(env, capacity=num_servers)
-
-        # Statistiques
-        self.total_arrivals = 0
-        self.total_rejections = 0
-        self.jobs_completed = 0
-
-    def process_job(self, job: Job, service_time_generator):
-        """
-        Traite un job avec rejet immédiat si serveurs pleins
-
-        Args:
-            job: Le job à traiter
-            service_time_generator: Fonction générant le temps de service
-        """
-        self.total_arrivals += 1
-
-        # Vérification immédiate: serveurs disponibles?
-        if self.resource.count >= self.num_servers:
-            # Rejet immédiat - Erreur
-            job.was_rejected = True
-            job.rejection_reason = "servers_full"
-            self.total_rejections += 1
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.REJECTION,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.system_id,
-                queue_length=0,
-                extra_data={
-                    "rejection_reason": "servers_full",
-                    "servers_busy": self.resource.count,
-                },
-            )
-            return
-
-        # Traitement normal
-        with self.resource.request() as request:
-            yield request
-
-            job.start_time = self.env.now
-            job.server_id = self.system_id
-            service_time = service_time_generator()
-            job.service_time = service_time
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.START_SERVICE,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.system_id,
-                queue_length=0,
-            )
-
-            yield self.env.timeout(service_time)
-
-            job.end_time = self.env.now
-            self.jobs_completed += 1
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.END_SERVICE,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.system_id,
-                queue_length=0,
-                extra_data={
-                    "service_time": service_time,
-                    "response_time": service_time,  # Pas d'attente dans un Loss System
-                },
-            )
-
-    def get_blocking_probability(self) -> float:
-        """
-        Calcule la probabilité de blocage (formule d'Erlang B)
-        """
-        if self.total_arrivals == 0:
-            return 0.0
-        return self.total_rejections / self.total_arrivals
-
-    def get_stats(self) -> dict:
-        """Retourne les statistiques du système"""
-        return {
-            "system_id": self.system_id,
-            "total_arrivals": self.total_arrivals,
-            "total_rejections": self.total_rejections,
-            "jobs_completed": self.jobs_completed,
-            "blocking_probability": self.get_blocking_probability(),
-        }
-
-
 class WaterfallScenario:
     """
     Scénario Waterfall complet avec analyse des capacités
@@ -303,47 +183,60 @@ class WaterfallScenario:
         env: simpy.Environment,
         logger: SimulationLogger,
         num_servers: int,
-        execution_queue_size: int,
+        execution_queue_size: Optional[int],
         execution_rate: float,
-        feedback_queue_size: int,
+        feedback_queue_size: Optional[int],
         feedback_rate: float,
         arrival_rate: float,
         duration: float,
-
+        finite: bool = True,
     ):
         """
         Args:
             env: Environnement SimPy
             logger: Logger centralisé
-            num_servers: Nombre de serveurs (ks)
-            max_queue_size: Taille de la file (kf)
+            num_servers: Nombre de serveurs
+            execution_queue_size: Size of the execution queue
+            execution_rate: Processing rate for a execution job
+            feedback_queue_size: Size of the execution queue
+            feedback_rate: Processing rate for a feedback job
+            arrival_rate: Arrival rate of submissions
+            duration: Duration of the simulation
         """
         self.env = env
         self.logger = logger
         self.duration = duration
+        self.finite = finite
+        self.completed_jobs = []
         self.execution_time_generator = lambda: random.expovariate(execution_rate)
         self.feedback_time_generator = lambda: random.expovariate(feedback_rate)
         self.arrival_time_generator = lambda: random.expovariate(arrival_rate)
 
+        exec_size = execution_queue_size if finite else None
+        feed_size = feedback_queue_size if finite else None
+
+        def _on_feedback_done(job):
+            self.completed_jobs.append(job)
+            yield self.env.timeout(0)
 
         self.feedback_queue = LimitedQueue(
             env=env,
-            queue_id=f"feedback_queue_{feedback_queue_size}",
-            max_queue_size=feedback_queue_size,
+            queue_id=f"feedback_queue_{feed_size or 'infinite'}",
+            max_queue_size=feed_size,
             num_servers=1,
             logger=logger,
-            time_generator=self.feedback_time_generator
+            time_generator=self.feedback_time_generator,
+            on_done=_on_feedback_done,
         )
         self.execution_queue = LimitedQueue(
             env=env,
-            queue_id=f"execution_queue_{execution_queue_size}",
-            max_queue_size=execution_queue_size,
+            queue_id=f"execution_queue_{exec_size or 'infinite'}",
+            max_queue_size=exec_size,
             num_servers=num_servers,
             logger=logger,
             time_generator=self.execution_time_generator,
-            on_done=self.feedback_queue.process_job
+            on_done=self.feedback_queue.process_job,
         )
-
 
     def arrivals(self):
         while self.env.now < self.duration:
@@ -374,9 +267,26 @@ class WaterfallScenario:
             f"{self.execution_queue.queue_id}": self.execution_queue.get_stats(),
             f"{scenario.execution_queue.queue_id}": scenario.execution_queue.get_stats(),
             "comparison": {
-                "queue_advantage": abs(self.execution_queue.jobs_completed
-                - scenario.execution_queue.jobs_completed),
+                "queue_advantage": abs(
+                    self.execution_queue.jobs_completed
+                    - scenario.execution_queue.jobs_completed
+                ),
                 f"{self.execution_queue.queue_id}_rejection_rate": self.execution_queue.rejection_rate,
                 f"{scenario.execution_queue.queue_id}_rejection_rate": scenario.execution_queue.rejection_rate,
             },
+        }
+
+    def get_sojourn_stats(self):
+        """Calcule les statistiques de séjour (sojourn time)"""
+        if not self.completed_jobs:
+            return {"mean_sojourn_time": 0.0, "sojourn_variance": 0.0}
+
+        sojourn_times = [job.end_time - job.arrival_time for job in self.completed_jobs]
+        mean = sum(sojourn_times) / len(sojourn_times)
+        variance = sum((t - mean) ** 2 for t in sojourn_times) / len(sojourn_times)
+
+        return {
+            "mean_sojourn_time": mean,
+            "sojourn_variance": variance,
+            "completed_jobs": len(self.completed_jobs),
         }
