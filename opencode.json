@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "typst": {
+      "type": "local",
+      "command": ["docker", "run", "--rm", "-i", 
+        "ghcr.io/johannesbrandenburger/typst-mcp:latest"
+      ],
+      "enabled": true
+    }
+  }
+}
