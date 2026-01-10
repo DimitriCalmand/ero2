@@ -8,9 +8,11 @@ Ce module implémente:
 - Analyse des taux de rejet (Page Blanche vs Erreur immédiate)
 """
 
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, Callable, Generator
 
 import simpy
+import random
 
 from src.core.simulation_engine import EventType, Job, SimulationLogger
 
@@ -27,13 +29,15 @@ class LimitedQueue:
         max_queue_size: int,
         num_servers: int,
         logger: SimulationLogger,
+        time_generator: Callable[[], float],
+        on_done: Optional[Callable[[Job], Generator]] = None,
     ):
         """
         Args:
             env: Environnement SimPy
             queue_id: Identifiant de la file
-            max_queue_size: Taille maximale de la file d'attente (kf)
-            num_servers: Nombre de serveurs (ks)
+            max_queue_size: Taille maximale de la file d'attente
+            num_servers: Nombre de serveurs
             logger: Logger centralisé
         """
         self.env = env
@@ -41,6 +45,8 @@ class LimitedQueue:
         self.max_queue_size = max_queue_size
         self.num_servers = num_servers
         self.logger = logger
+        self.time_generator = time_generator
+        self.on_done = on_done
 
         # Resource SimPy avec capacité limitée
         # Capacité totale = serveurs + file d'attente
@@ -53,98 +59,28 @@ class LimitedQueue:
         self.rejections_server_full = 0  # Serveurs pleins
         self.jobs_completed = 0
 
-    def get_queue_length(self) -> int:
+    @property
+    def queue_length(self) -> int:
         """Retourne la longueur actuelle de la file"""
         return len(self.resource.queue)
 
-    def get_total_in_system(self) -> int:
+    @property
+    def total_in_system(self) -> int:
         """Retourne le nombre total d'entités dans le système"""
         return self.resource.count + len(self.resource.queue)
 
+    @property
     def is_queue_full(self) -> bool:
         """Vérifie si la file d'attente est pleine"""
         return len(self.resource.queue) >= self.max_queue_size
 
+    @property
     def is_server_full(self) -> bool:
         """Vérifie si tous les serveurs sont occupés"""
         return self.resource.count >= self.num_servers
 
-    def process_job(self, job: Job, service_time_generator):
-        """
-        Traite un job avec gestion des capacités limitées
-
-        Args:
-            job: Le job à traiter
-            service_time_generator: Fonction générant le temps de service
-        """
-        self.total_arrivals += 1
-
-        # Vérification de la capacité AVANT d'entrer dans la file
-        total_in_system = self.get_total_in_system()
-
-        # Rejet si le système est plein (serveurs + file)
-        if total_in_system >= (self.num_servers + self.max_queue_size):
-            # Rejet - File d'attente pleine
-            job.was_rejected = True
-            job.rejection_reason = "queue_full"
-            self.total_rejections += 1
-            self.rejections_queue_full += 1
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.REJECTION,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.queue_id,
-                queue_length=self.get_queue_length(),
-                extra_data={
-                    "rejection_reason": "queue_full",
-                    "total_in_system": total_in_system,
-                },
-            )
-            return
-
-        # Tentative d'accès au serveur
-        with self.resource.request() as request:
-            yield request
-
-            # Début du service
-            job.start_time = self.env.now
-            job.server_id = self.queue_id
-            service_time = service_time_generator()
-            job.service_time = service_time
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.START_SERVICE,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.queue_id,
-                queue_length=self.get_queue_length(),
-            )
-
-            # Exécution du service
-            yield self.env.timeout(service_time)
-
-            # Fin du service
-            job.end_time = self.env.now
-            self.jobs_completed += 1
-
-            self.logger.log_event(
-                time=self.env.now,
-                event_type=EventType.END_SERVICE,
-                entity_id=job.id,
-                entity_type=job.job_type,
-                server_id=self.queue_id,
-                queue_length=self.get_queue_length(),
-                extra_data={
-                    "service_time": service_time,
-                    "waiting_time": job.get_waiting_time(),
-                    "response_time": job.get_response_time(),
-                },
-            )
-
-    def get_rejection_rate(self) -> float:
+    @property
+    def rejection_rate(self) -> float:
         """Calcule le taux de rejet"""
         if self.total_arrivals == 0:
             return 0.0
@@ -158,13 +94,84 @@ class LimitedQueue:
             "total_rejections": self.total_rejections,
             "rejections_queue_full": self.rejections_queue_full,
             "jobs_completed": self.jobs_completed,
-            "rejection_rate": self.get_rejection_rate(),
+            "rejection_rate": self.rejection_rate,
             "completion_rate": (
                 self.jobs_completed / self.total_arrivals
                 if self.total_arrivals > 0
                 else 0.0
             ),
         }
+
+    def process_job(self, job: Job):
+        """
+        Traite un job avec gestion des capacités limitées
+
+        Args:
+            job: Le job à traiter
+            service_time_generator: Fonction générant le temps de service
+        """
+        self.total_arrivals += 1
+
+        total_in_system = self.total_in_system
+
+        if total_in_system >= (self.num_servers + self.max_queue_size):
+            job.was_rejected = True
+            job.rejection_reason = "queue_full"
+            self.total_rejections += 1
+            self.rejections_queue_full += 1
+
+            self.logger.log_event(
+                time=self.env.now,
+                event_type=EventType.REJECTION,
+                entity_id=job.id,
+                entity_type=job.job_type,
+                server_id=self.queue_id,
+                queue_length=self.queue_length,
+                extra_data={
+                    "rejection_reason": "queue_full",
+                    "total_in_system": total_in_system,
+                },
+            )
+            return
+
+        with self.resource.request() as request:
+            yield request
+
+            job.start_time = self.env.now
+            job.server_id = self.queue_id
+            service_time = self.time_generator()
+            job.service_time = service_time
+
+            self.logger.log_event(
+                time=self.env.now,
+                event_type=EventType.START_SERVICE,
+                entity_id=job.id,
+                entity_type=job.job_type,
+                server_id=self.queue_id,
+                queue_length=self.queue_length,
+            )
+
+            yield self.env.timeout(service_time)
+
+            job.end_time = self.env.now
+            self.jobs_completed += 1
+
+            self.logger.log_event(
+                time=self.env.now,
+                event_type=EventType.END_SERVICE,
+                entity_id=job.id,
+                entity_type=job.job_type,
+                server_id=self.queue_id,
+                queue_length=self.queue_length,
+                extra_data={
+                    "service_time": service_time,
+                    "waiting_time": job.get_waiting_time(),
+                    "response_time": job.get_response_time(),
+                },
+            )
+
+        if self.on_done is not None:
+            yield from self.on_done(job)
 
 
 class LossSystem:
@@ -296,8 +303,13 @@ class WaterfallScenario:
         env: simpy.Environment,
         logger: SimulationLogger,
         num_servers: int,
-        max_queue_size: int,
+        execution_queue_size: int,
+        execution_rate: float,
         feedback_queue_size: int,
+        feedback_rate: float,
+        arrival_rate: float,
+        duration: float,
+
     ):
         """
         Args:
@@ -308,88 +320,63 @@ class WaterfallScenario:
         """
         self.env = env
         self.logger = logger
+        self.duration = duration
+        self.execution_time_generator = lambda: random.expovariate(execution_rate)
+        self.feedback_time_generator = lambda: random.expovariate(feedback_rate)
+        self.arrival_time_generator = lambda: random.expovariate(arrival_rate)
 
-        # File limitée
-        self.limited_queue = LimitedQueue(
-            env=env,
-            queue_id="waterfall_queue",
-            max_queue_size=max_queue_size,
-            num_servers=num_servers,
-            logger=logger,
-        )
 
         self.feedback_queue = LimitedQueue(
             env=env,
-            queue_id="waterfall_feedback_queue",
+            queue_id=f"feedback_queue_{feedback_queue_size}",
             max_queue_size=feedback_queue_size,
             num_servers=1,
             logger=logger,
+            time_generator=self.feedback_time_generator
+        )
+        self.execution_queue = LimitedQueue(
+            env=env,
+            queue_id=f"execution_queue_{execution_queue_size}",
+            max_queue_size=execution_queue_size,
+            num_servers=num_servers,
+            logger=logger,
+            time_generator=self.execution_time_generator,
+            on_done=self.feedback_queue.process_job
         )
 
-        # Loss system pour comparaison
-        self.loss_system = LossSystem(
-            env=env, system_id="loss_system", num_servers=num_servers, logger=logger
-        )
 
-    def run_comparison(
-        self, arrival_rate: float, service_rate: float, feedback_rate: float, duration: float
+    def arrivals(self):
+        while self.env.now < self.duration:
+            yield self.env.timeout(self.arrival_time_generator())
+
+            if self.env.now >= self.duration:
+                break
+
+            job = Job(arrival_time=self.env.now, job_type="ING")
+            self.env.process(self.execution_queue.process_job(job))
+
+    def compare(
+        self,
+        scenario: WaterfallScenario,
     ) -> dict:
         """
-        Compare les deux approches (avec/sans file)
+        Compare les deux approches
 
         Args:
-            arrival_rate: Taux d'arrivée λ
-            service_rate: Taux de service μ
-            duration: Durée de la simulation
+            scenario: Scenario to compare against
 
         Returns:
             Dictionnaire avec les résultats comparatifs
         """
-        import random
-
-        service_time_gen = lambda: random.expovariate(service_rate)
-        feedback_time_gen = lambda: random.expovariate(feedback_rate)
-
-        # Générateurs pour les deux systèmes
-        from src.core.simulation_engine import Job
-
-        def arrivals_limited_queue():
-            while self.env.now < duration:
-                interarrival = random.expovariate(arrival_rate)
-                yield self.env.timeout(interarrival)
-
-                if self.env.now >= duration:
-                    break
-
-                job = Job(arrival_time=self.env.now, job_type="ING")
-                self.env.process(self.limited_queue.process_job(job, service_time_gen))
-
-        def arrivals_loss_system():
-            while self.env.now < duration:
-                interarrival = random.expovariate(arrival_rate)
-                yield self.env.timeout(interarrival)
-
-                if self.env.now >= duration:
-                    break
-
-                job = Job(arrival_time=self.env.now, job_type="ING")
-                self.env.process(self.loss_system.process_job(job, service_time_gen))
-
-        # Lancement des processus
-        self.env.process(arrivals_limited_queue())
-        self.env.process(arrivals_loss_system())
-
-        # Exécution
-        self.env.run(until=duration)
 
         # Résultats
         return {
-            "limited_queue": self.limited_queue.get_stats(),
-            "loss_system": self.loss_system.get_stats(),
+            f"{self.execution_queue.queue_id}": self.execution_queue.get_stats(),
+            f"{scenario.execution_queue.queue_id}": scenario.execution_queue.get_stats(),
             "comparison": {
-                "queue_advantage": self.limited_queue.jobs_completed
-                - self.loss_system.jobs_completed,
-                "queue_rejection_rate": self.limited_queue.get_rejection_rate(),
-                "loss_blocking_probability": self.loss_system.get_blocking_probability(),
+                "queue_advantage": abs(self.execution_queue.jobs_completed
+                - scenario.execution_queue.jobs_completed),
+                f"{self.execution_queue.queue_id}_rejection_rate": self.execution_queue.rejection_rate,
+                f"{scenario.execution_queue.queue_id}_rejection_rate": scenario.execution_queue.rejection_rate,
             },
         }

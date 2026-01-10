@@ -92,48 +92,88 @@ def scenario_waterfall(duration: float = 1000.0, seed: int = 42):
         duration: Durée de la simulation
         seed: Graine aléatoire
     """
-    print("=== SCÉNARIO WATERFALL: Files Finies ===\n")
+    print("=== SCÉNARIO WATERFALL: Analyses Multiples ===\n")
+
+    def run_waterfall_config(name, arrival, execution, feedback, servers, ks, kf):
+        print(f"--- {name} ---")
+        print(f"Paramètres: λ={arrival}, μ_exec={execution}, μ_feed={feedback}, c={servers}, ks={ks}, kf={kf}")
+        
+        engine = SimulationEngine(random_seed=seed)
+        
+        # No Queue (Limit=0)
+        scenario_no_queue = WaterfallScenario(
+            env=engine.env,
+            logger=engine.logger,
+            num_servers=servers,
+            execution_queue_size=0,
+            execution_rate=execution,
+            feedback_queue_size=0,
+            feedback_rate=feedback,
+            arrival_rate=arrival,
+            duration=duration
+        )
+        
+        # With Queue
+        scenario_with_queue = WaterfallScenario(
+            env=engine.env,
+            logger=engine.logger,
+            num_servers=servers,
+            execution_queue_size=ks,
+            feedback_queue_size=kf,
+            execution_rate=execution,
+            feedback_rate=feedback,
+            arrival_rate=arrival,
+            duration=duration
+        )
+        
+        engine.env.process(scenario_no_queue.arrivals())
+        engine.env.process(scenario_with_queue.arrivals())
+        engine.run(duration)
+        
+        # Stats
+        stats_no_queue_exec = scenario_no_queue.execution_queue.get_stats()
+        stats_no_queue_feed = scenario_no_queue.feedback_queue.get_stats()
+        stats_with_queue_exec = scenario_with_queue.execution_queue.get_stats()
+        stats_with_queue_feed = scenario_with_queue.feedback_queue.get_stats()
+        
+        print("\nRésultats:")
+        print("  1. Sans File:")
+        print(f"     Exec: {stats_no_queue_exec['jobs_completed']} complétés, {stats_no_queue_exec['rejection_rate']:.1%} rejets")
+        print(f"     Feed: {stats_no_queue_feed['jobs_completed']} complétés, {stats_no_queue_feed['rejection_rate']:.1%} rejets")
+        
+        print(f"  2. Avec Files (ks={ks}, kf={kf}):")
+        print(f"     Exec: {stats_with_queue_exec['jobs_completed']} complétés, {stats_with_queue_exec['rejection_rate']:.1%} rejets")
+        print(f"     Feed: {stats_with_queue_feed['jobs_completed']} complétés, {stats_with_queue_feed['rejection_rate']:.1%} rejets")
+        
+        gain = stats_with_queue_exec['jobs_completed'] - stats_no_queue_exec['jobs_completed']
+        print(f"  Gain total (Exec): {gain:+d} jobs\n")
+        
+        return engine.get_results(), {
+            "no_queue_exec": stats_no_queue_exec,
+            "with_queue_exec": stats_with_queue_exec
+        }
+
+    configs = [
+        {"name": "Reference (Standard)", "arrival": 3.0, "exec": 2.5, "feed": 1.5, "servers": 2, "ks": 5, "kf": 5},
+        {"name": "Saturated Execution (Petit ks)", "arrival": 3.0, "exec": 2.5, "feed": 1.5, "servers": 2, "ks": 2, "kf": 10},
+        {"name": "Saturated Feedback (Petit kf)", "arrival": 3.0, "exec": 2.5, "feed": 1.5, "servers": 2, "ks": 10, "kf": 2},
+        {"name": "High Traffic", "arrival": 4.0, "exec": 3.0, "feed": 2.0, "servers": 3, "ks": 10, "kf": 10},
+        {"name": "Bottleneck Feedback", "arrival": 2.5, "exec": 4.0, "feed": 1.0, "servers": 2, "ks": 5, "kf": 2},
+        {"name": "Stable Feedback (High Feed Rate)", "arrival": 3.0, "exec": 2.5, "feed": 3.5, "servers": 2, "ks": 5, "kf": 5}
+    ]
     
-    # Paramètres
-    arrival_rate = 3.0
-    service_rate = 2.5
-    num_servers = 2
-    max_queue_size = 5
+    last_df = None
+    all_results = {}
     
-    print(f"Paramètres:")
-    print(f"  λ: {arrival_rate}")
-    print(f"  μ: {service_rate}")
-    print(f"  c (serveurs): {num_servers}")
-    print(f"  k_f (file max): {max_queue_size}\n")
-    
-    # Initialisation
-    engine = SimulationEngine(random_seed=seed)
-    scenario = WaterfallScenario(
-        env=engine.env,
-        logger=engine.logger,
-        num_servers=num_servers,
-        max_queue_size=max_queue_size
-    )
-    
-    # Exécution
-    results = scenario.run_comparison(arrival_rate, service_rate, duration)
-    
-    print("Résultats File Limitée:")
-    print(f"  Arrivées: {results['limited_queue']['total_arrivals']}")
-    print(f"  Complétés: {results['limited_queue']['jobs_completed']}")
-    print(f"  Rejets: {results['limited_queue']['total_rejections']}")
-    print(f"  Taux de rejet: {results['limited_queue']['rejection_rate']:.2%}\n")
-    
-    print("Résultats Loss System:")
-    print(f"  Arrivées: {results['loss_system']['total_arrivals']}")
-    print(f"  Complétés: {results['loss_system']['jobs_completed']}")
-    print(f"  Rejets: {results['loss_system']['total_rejections']}")
-    print(f"  Prob. blocage: {results['loss_system']['blocking_probability']:.2%}\n")
-    
-    print("Comparaison:")
-    print(f"  Avantage file: +{results['comparison']['queue_advantage']} jobs\n")
-    
-    return engine.get_results(), results
+    for config in configs:
+        df, res = run_waterfall_config(
+            config["name"], config["arrival"], config["exec"], config["feed"], 
+            config["servers"], config["ks"], config["kf"]
+        )
+        last_df = df
+        all_results[config["name"]] = res
+        
+    return last_df, all_results
 
 
 def scenario_backup(duration: float = 1000.0, seed: int = 42):
