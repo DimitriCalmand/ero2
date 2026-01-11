@@ -66,58 +66,63 @@ Une moulinette est constituée formellement de :
 == Workflow nominal
 Un étudiant code les réponses à des exercices dans un repository git dédié. Lorsqu'un tag est utilisé, une vérification est effectuée pour s'assurer qu'il correspond à un tag réservé. Si tel est le cas, la test-suite associée est exécutée selon le schéma du système d'attente.
 
-= Étude de cas
-L'étude d'un modèle de moulinettage implique des choix dépendants du contexte dans lequel le système est déployé. Les cas suivants sont présentés par ordre croissant de complexité.
+= Moteur de simulation implémenté
+Afin de modéliser le système de moulinette, nous avons développé un moteur de simulation à événements discrets en Python utilisant la bibliothèque SimPy pour la gestion du temps. Ce moteur permet de simuler divers scénarios de files d'attente avec des paramètres configurables tels que le taux d'arrivée, le taux de service, le nombre de serveurs, et les politiques d'ordonnancement. Les classes principales sont décrites ci-dessous, de manière synthétique.
 
-== Waterfall
+== Job
+Un job représente une unité de travail dans le système de moulinette. Chaque job est donc associé à un push tag déclenchant l'exécution de la testsuite. Un job possède notammnet les attributs suivants :
+#list(
+  [Un identifiant unique.],
+  [Un temps d'arrivée (arrival_time).],
+  [Un temps de service (service_time) : durée nécessaire pour exécuter la test
+suite.],
+  [Un type (type) : pour différencier les populations de jobs (ex:
+ING, PREPA).]
+)
+
+Les jobs ont également des métadonnées supplémentaires pour le suivi des performances, telles que la raison du rejet (rejection_reason) et l'id du serveur qui a traité le job (server_id).
+
+== Server
+Un serveur représente une ressource capable de traiter les jobs. Chaque serveur possède les attributs suivants :
+#list(
+  [Un identifiant unique.],
+  [Un statut (status) : indique si le serveur est libre ou occupé.],
+  [Un compteur de jobs traités (jobs_processed).]
+)
+
+Les serveurs peuvent exécuter des jobs en fonction de leur disponibilité et de la politique d'ordonnancement définie.
+
+== JobGenerator
+Le générateur de jobs est responsable de la création de nouveaux jobs dans le système. Il utilise un processus de génération basé sur une distribution de Poisson pour simuler les arrivées aléatoires des jobs. Les attributs principaux incluent :
+#list(
+  [Le taux d'arrivée (arrival_rate) : moyenne des arrivées par unité de temps.],
+  [Le type de job généré (job_type).]
+)
+
+= Étude de cas
+Les scénarios suivants ont été simulés pour analyser le comportement du système de moulinette en tant que réseau de files d'attente.
+
+== Cas 1: Files en Cascade (Waterfall)
+
 Dans ce modèle, tout agent de la population suit le processus séquentiel suivant :
 1. Un push tag place le code dans une file d'attente FIFO pour l'exécution de la test-suite (K serveurs).
 2. Le résultat de la test-suite est placé dans une file d'attente FIFO pour l'envoi vers le front (1 serveur).
 
 Nous proposons un système d'attente modélisant ce contexte, en commençant par des files infinies, puis en introduisant des contraintes finies pour analyser les proportions de refus.
 
+=== Implémentation
+TODO
 
+=== Système naïf (files infinies)
+TODO
 
-= Cas 1: File M/M/c Standard (Scénario Basique)
+=== Système avec files finies
+TODO
 
-== Paramètres
-- Taux d'arrivée λ = 2.0 jobs/unité de temps
-- Taux de service μ = 3.0 jobs/unité de temps  
-- Nombre de serveurs c = 1
-- Taux d'utilisation théorique ρ = λ/(μ×c) = 0.67
-- Durée de simulation: 2000 unités de temps
+=== Backup des résultats
+TODO
 
-== Comportement du système
-
-Le système avec ρ = 0.67 < 1 est *stable*. La file M/M/1 avec cette charge permet au système de traiter toutes les arrivées sans accumulation infinie.
-
-#figure(
-  image("results/basic_scenario/queue_length.png", width: 90%),
-  caption: [Évolution de la longueur de file pour le scénario basique]
-)
-
-== Métriques observées
-
-#table(
-  columns: (auto, auto),
-  [*Métrique*], [*Valeur*],
-  [Débit], [1.9868 jobs/unité],
-  [Utilisation serveur], [65.32%],
-  [Temps d'attente moyen], [0.7048],
-  [Temps de réponse moyen], [1.0336],
-  [Temps d'attente P95], [2.9860],
-  [Temps d'attente P99], [4.8134],
-  [Taux de rejet], [0.00%]
-)
-
-#figure(
-  image("results/basic_scenario/waiting_time.png", width: 90%),
-  caption: [Distribution des temps d'attente]
-)
-
-= Cas 2: Files en Cascade (Waterfall)
-
-== Paramètres
+=== Paramètres
 
 Configuration de référence testée:
 - λ = 3.0 jobs/unité
@@ -127,7 +132,7 @@ Configuration de référence testée:
 - ks = 5 (capacité file exécution)
 - kf = 5 (capacité file feedback)
 
-== Comportement du système
+=== Comportement du système
 
 Le système waterfall présente deux files en cascade avec capacités finies. Le comportement varie selon les capacités:
 
@@ -153,16 +158,25 @@ Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec).
   caption: [Distribution des temps d'attente en cascade]
 )
 
-= Cas 3: Populations Hétérogènes (Channels)
+== Cas 2: Channels et Dams
 
-== Paramètres
+=== Implémentation
+TODO
+
+=== Analyse des channels
+TODO
+
+=== Gating
+TODO
+
+=== Paramètres
 
 - Population ING: λ_ING = 1.5, μ_ING = 2.5
 - Population PREPA: λ_PREPA = 0.5, μ_PREPA = 2.0  
 - Serveurs: c = 2
 - Politiques testées: FIFO, SJF, PRIORITY
 
-== Comportement du système
+=== Comportement du système
 
 Le système gère deux populations avec des caractéristiques distinctes. La politique d'ordonnancement influence les performances:
 
@@ -176,9 +190,9 @@ Le système gère deux populations avec des caractéristiques distinctes. La pol
 
 FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs.
 
-= Cas 4: Barrage Temporel (Gating)
+== Cas 4: Barrage Temporel (Gating)
 
-== Paramètres
+=== Paramètres
 
 - Population ING: λ = 1.5, μ = 2.5
 - Population PREPA: λ = 0.5, μ = 2.0
@@ -187,7 +201,7 @@ FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIO
 - Durée d'ouverture: 50 unités
 - Intervalles de fermeture testés: [(0, 100), (150, 250), (300, 400)]
 
-== Comportement du système
+=== Comportement du système
 
 Le gating introduit des périodes de fermeture pendant lesquelles la population PREPA ne peut pas accéder au système. Cela augmente drastiquement les temps de réponse:
 
@@ -200,16 +214,16 @@ Le gating introduit des périodes de fermeture pendant lesquelles la population 
 
 Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, créant un effet de "burst" lors de la réouverture. L'impact est massif sur les deux populations malgré que seule PREPA soit bloquée directement.
 
-= Cas 5: Validation Théorique (Advanced Metrics)
+== Cas 5: Validation Théorique (Advanced Metrics)
 
-== Paramètres
+=== Paramètres
 
 - λ = 2.0 jobs/unité
 - μ = 3.0 jobs/unité
 - c = 2 serveurs
 - ρ = 0.3333
 
-== Vérification Loi de Little
+=== Vérification Loi de Little
 
 La loi de Little stipule: L = λW (nombre moyen dans le système = taux d'arrivée × temps moyen de séjour)
 
@@ -221,7 +235,7 @@ La loi de Little stipule: L = λW (nombre moyen dans le système = taux d'arriv�
   [Erreur relative], [6.84%], [✓ Validé]
 )
 
-== Comparaison simulation vs théorie M/M/c
+=== Comparaison simulation vs théorie M/M/c
 
 #table(
   columns: (auto, auto, auto, auto),
@@ -237,9 +251,9 @@ La simulation présente une *excellente* concordance avec la théorie M/M/c (err
   caption: [Stabilité du système avec c=2 serveurs]
 )
 
-= Cas 6: Stratégies de Backup
+== Cas 6: Stratégies de Backup
 
-== Paramètres
+=== Paramètres
 
 - λ = 2.0 jobs/unité
 - μ = 3.0 (service principal)
@@ -247,7 +261,7 @@ La simulation présente une *excellente* concordance avec la théorie M/M/c (err
 - c = 2 serveurs
 - Durée: 2000 unités
 
-== Comportement des stratégies
+=== Comportement des stratégies
 
 Trois stratégies de backup ont été testées:
 
