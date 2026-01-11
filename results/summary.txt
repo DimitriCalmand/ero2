@@ -1,0 +1,21 @@
+=== RAPPORT D'ANALYSE ===
+
+Date: 2026-01-11 16:10:14
+
+Débit: 1.9838 jobs/unité
+Utilisation: 33.65%
+Taux de rejet: 0.00%
+
+Temps d'attente:
+  mean: 0.0448
+  median: 0.0000
+  p95: 0.3246
+  p99: 0.7112
+  std: 0.1406
+
+Temps de réponse:
+  mean: 0.3841
+  median: 0.2708
+  p95: 1.1259
+  p99: 1.6474
+  std: 0.3719

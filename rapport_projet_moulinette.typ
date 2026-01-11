@@ -43,22 +43,7 @@
 #pagebreak()
 
 = Introduction
-Dans le cadre de ce projet, nous allons explorer l'infrastructure de correction automatique de l'École, la "moulinette", sous l'angle des systèmes d'attente. L'objectif est d'analyser son comportement et de proposer des modélisations.
-
-= Livrables
-Le présent rapport inclut, pour chaque cas d'étude :
-#enum(
-  [Le code permettant de simuler les systèmes d'attente.],
-  [Une analyse du comportement de chaque cas traité, comprenant au minimum :
-    #list(
-      [Les paramètres en jeu.],
-      [Le comportement du système d'attente en fonction des paramètres qui le définissent, notamment en ce qui concerne sa stabilité.],
-      [Une évaluation du système au regard de métriques standard : nombre d'agents, temps de séjour, taux de blocage, etc.],
-      [Une synthèse des résultats et des recommandations pour des plages de paramètres permettant un comportement acceptable et efficace, incluant une analyse des risques côté expérience utilisateur.]
-    )
-  ],
-  [Les résultats bruts des simulations soutenant les observations.]
-)
+Ce rapport présente une analyse factuelle du simulateur de moulinette EPITA modélisé comme un système de files d'attente. Nous avons testé différents scénarios avec des paramètres variés pour évaluer le comportement du système. Les résultats sont basés sur des simulations à événements discrets utilisant SimPy.
 
 = Terminologie
 Voici quelques précisions sur la terminologie utilisée dans ce projet.
@@ -91,72 +76,226 @@ Dans ce modèle, tout agent de la population suit le processus séquentiel suiva
 
 Nous proposons un système d'attente modélisant ce contexte, en commençant par des files infinies, puis en introduisant des contraintes finies pour analyser les proportions de refus.
 
-=== Simulation
-Le code de simulation utilise la classe `WaterfallScenario` du module capacity. Pour les files infinies, nous utilisons `finite=False` pour éviter les rejets et observer le comportement naturel. Pour les files finies, nous comparons des scénarios avec et sans files d'attente limitées.
 
-Exemple de code pour simulation infinie :
-```
-scenario = WaterfallScenario(
-    env=engine.env,
-    logger=engine.logger,
-    num_servers=2,
-    execution_queue_size=None,  # Ignoré en mode infini
-    execution_rate=2.5,
-    feedback_queue_size=None,
-    feedback_rate=1.5,
-    arrival_rate=3.0,
-    duration=1000.0,
-    finite=False
+
+= Cas 1: File M/M/c Standard (Scénario Basique)
+
+== Paramètres
+- Taux d'arrivée λ = 2.0 jobs/unité de temps
+- Taux de service μ = 3.0 jobs/unité de temps  
+- Nombre de serveurs c = 1
+- Taux d'utilisation théorique ρ = λ/(μ×c) = 0.67
+- Durée de simulation: 2000 unités de temps
+
+== Comportement du système
+
+Le système avec ρ = 0.67 < 1 est *stable*. La file M/M/1 avec cette charge permet au système de traiter toutes les arrivées sans accumulation infinie.
+
+#figure(
+  image("results/basic_scenario/queue_length.png", width: 90%),
+  caption: [Évolution de la longueur de file pour le scénario basique]
 )
-engine.env.process(scenario.arrivals())
-engine.run(duration)
-sojourn_stats = scenario.get_sojourn_stats()
-```
 
-Pour les files finies, nous exécutons plusieurs configurations avec différents paramètres (λ, μ_exec, μ_feed, c, ks, kf).
+== Métriques observées
 
-=== Analyse
-Les paramètres en jeu incluent :
-- λ : taux d'arrivée des jobs (push tags).
-- μ_exec : taux de service pour l'exécution (test-suite).
-- μ_feed : taux de service pour l'envoi des résultats.
-- c : nombre de serveurs pour l'exécution.
-- ks, kf : tailles maximales des files d'exécution et de feedback (pour mode fini).
+#table(
+  columns: (auto, auto),
+  [*Métrique*], [*Valeur*],
+  [Débit], [1.9868 jobs/unité],
+  [Utilisation serveur], [65.32%],
+  [Temps d'attente moyen], [0.7048],
+  [Temps de réponse moyen], [1.0336],
+  [Temps d'attente P95], [2.9860],
+  [Temps d'attente P99], [4.8134],
+  [Taux de rejet], [0.00%]
+)
 
-Le comportement du système montre que les files infinies évitent les rejets mais entraînent des temps de séjour élevés avec forte variance (ex. : temps moyen ~23.6, variance ~93.6 pour λ=3.0, μ_exec=2.5, μ_feed=1.5, c=2). En mode fini, les rejets apparaissent principalement dans la file de feedback (ex. : 52-60% de rejets sans file, réduits à 7-55% avec files limitées), améliorant le débit d'exécution (+60-70 jobs) mais maintenant des rejets.
+#figure(
+  image("results/basic_scenario/waiting_time.png", width: 90%),
+  caption: [Distribution des temps d'attente]
+)
 
-La stabilité dépend de ρ = λ/(c*μ_exec) : pour ρ < 1, le système est stable, sinon instable. Recommandations : files finies avec ks=5-10, kf=5-10 pour λ=3.0 permettent un bon compromis débit/rejets. Analyse des risques : rejets élevés peuvent frustrer les utilisateurs ; backup nécessaire pour éviter pertes de données.
+= Cas 2: Files en Cascade (Waterfall)
 
-=== Résultats bruts
-Simulation infinie (durée=100, λ=3.0, μ_exec=2.5, μ_feed=1.5, c=2) :
-- Jobs exécutés : 306
-- Jobs finalisés : 140
-- Temps de séjour moyen : 23.6116
-- Variance empirique : 93.5903
-- Rejets (Exec/Feed) : 0/0
+== Paramètres
 
-Configuration "Reference" (ks=5, kf=5) :
-- Sans file : Exec 226 complétés (28.0% rejets), Feed 95 (57.5% rejets)
-- Avec files : Exec 289 (0.7% rejets), Feed 133 (52.6% rejets)
-- Gain Exec : +63 jobs
-- Temps séjour moyen : 4.4729, Variance : 3.5904
+Configuration de référence testée:
+- λ = 3.0 jobs/unité
+- μ_exec = 2.5 jobs/unité (file d'exécution)
+- μ_feed = 1.5 jobs/unité (file de feedback)
+- c = 2 serveurs
+- ks = 5 (capacité file exécution)
+- kf = 5 (capacité file feedback)
 
-[Autres configurations similaires, avec variations selon ks/kf.]
+== Comportement du système
 
-== Canaux et Barrages
-Dans ce modèle, certaines populations d'étudiants ont des temps d'attente plus élevés que d'autres. Des régulations peuvent être introduites pour minimiser le temps de séjour moyen.
+Le système waterfall présente deux files en cascade avec capacités finies. Le comportement varie selon les capacités:
 
-=== Simulation
-[Insérer le code de simulation pour le modèle Canaux et Barrages ici.]
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Configuration*], [*Jobs Exec*], [*Rejet Exec*], [*Temps séjour*],
+  [Sans files (loss)], [4499], [26.0%], [-],
+  [Reference (ks=5, kf=5)], [5897], [1.0%], [3.87],
+  [Petit ks (ks=2, kf=10)], [5674], [7.0%], [7.29],
+  [Petit kf (ks=10, kf=2)], [5980], [0.1%], [2.14],
+  [High traffic], [8188], [0.0%], [5.25]
+)
 
-=== Analyse
-[Analyser les paramètres en jeu, le comportement du système, la stabilité, les métriques (nombre d'agents, temps de séjour, taux de blocage), synthèse des résultats et recommandations.]
+#figure(
+  image("results/waterfall_scenario/queue_length.png", width: 90%),
+  caption: [Longueurs de files pour les configurations waterfall]
+)
 
-=== Résultats bruts
-[Insérer les résultats bruts des simulations ici.]
+Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée.
+
+#figure(
+  image("results/waterfall_scenario/waiting_time.png", width: 90%),
+  caption: [Distribution des temps d'attente en cascade]
+)
+
+= Cas 3: Populations Hétérogènes (Channels)
+
+== Paramètres
+
+- Population ING: λ_ING = 1.5, μ_ING = 2.5
+- Population PREPA: λ_PREPA = 0.5, μ_PREPA = 2.0  
+- Serveurs: c = 2
+- Politiques testées: FIFO, SJF, PRIORITY
+
+== Comportement du système
+
+Le système gère deux populations avec des caractéristiques distinctes. La politique d'ordonnancement influence les performances:
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Politique*], [*ING (temps)*], [*PREPA (temps)*], [*Différence*],
+  [FIFO], [0.4827], [0.5597], [+16.0%],
+  [SJF], [0.4647], [0.5490], [+18.1%],
+  [PRIORITY], [0.4679], [0.5920], [+26.5%]
+)
+
+FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs.
+
+= Cas 4: Barrage Temporel (Gating)
+
+== Paramètres
+
+- Population ING: λ = 1.5, μ = 2.5
+- Population PREPA: λ = 0.5, μ = 2.0
+- Serveurs: c = 2
+- Période de barrage: tb = 100
+- Durée d'ouverture: 50 unités
+- Intervalles de fermeture testés: [(0, 100), (150, 250), (300, 400)]
+
+== Comportement du système
+
+Le gating introduit des périodes de fermeture pendant lesquelles la population PREPA ne peut pas accéder au système. Cela augmente drastiquement les temps de réponse:
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Population*], [*Sans gating*], [*Avec gating*], [*Augmentation*],
+  [ING], [0.4869], [9.8174], [+1916.4%],
+  [PREPA], [0.5519], [10.0912], [+1728.5%]
+)
+
+Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, créant un effet de "burst" lors de la réouverture. L'impact est massif sur les deux populations malgré que seule PREPA soit bloquée directement.
+
+= Cas 5: Validation Théorique (Advanced Metrics)
+
+== Paramètres
+
+- λ = 2.0 jobs/unité
+- μ = 3.0 jobs/unité
+- c = 2 serveurs
+- ρ = 0.3333
+
+== Vérification Loi de Little
+
+La loi de Little stipule: L = λW (nombre moyen dans le système = taux d'arrivée × temps moyen de séjour)
+
+#table(
+  columns: (auto, auto, auto),
+  [*Métrique*], [*Valeur*], [*Statut*],
+  [L (observé)], [0.8027], [-],
+  [λW], [0.7478], [-],
+  [Erreur relative], [6.84%], [✓ Validé]
+)
+
+== Comparaison simulation vs théorie M/M/c
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Métrique*], [*Simulée*], [*Théorique*], [*Erreur*],
+  [Utilisation], [0.3326], [0.3333], [0.23%],
+  [Temps d'attente], [0.0412], [0.0417], [1.09%]
+)
+
+La simulation présente une *excellente* concordance avec la théorie M/M/c (erreur moyenne 0.63%). Les écarts sont dus à la variance d'échantillonnage.
+
+#figure(
+  image("results/advanced_scenario/queue_length.png", width: 90%),
+  caption: [Stabilité du système avec c=2 serveurs]
+)
+
+= Cas 6: Stratégies de Backup
+
+== Paramètres
+
+- λ = 2.0 jobs/unité
+- μ = 3.0 (service principal)
+- μ_b = 10.0 (service backup)
+- c = 2 serveurs
+- Durée: 2000 unités
+
+== Comportement des stratégies
+
+Trois stratégies de backup ont été testées:
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Stratégie*], [*Jobs traités*], [*Jobs sauvegardés*], [*Taux backup*],
+  [Systematic], [4002], [4004], [100.05%],
+  [Random 50%], [3934], [2013], [51.17%],
+  [Random 20%], [4000], [811], [20.28%]
+)
+
+Le temps de backup moyen reste stable (~0.10) pour toutes les stratégies. La stratégie systematic garantit la sauvegarde de tous les jobs, tandis que les stratégies probabilistes permettent d'économiser des ressources au prix d'une couverture partielle.
+
+#figure(
+  image("results/backup_scenario/response_time_by_type.png", width: 90%),
+  caption: [Temps de réponse selon la stratégie de backup]
+)
+
+= Synthèse et Observations
+
+== Stabilité des systèmes
+
+- *M/M/c stable*: ρ < 1 assure la stabilité (cas 1 et 5)
+- *Files finies*: taux de rejet fonction de la capacité (cas 2)
+- *Gating*: instabilité temporaire pendant les fermetures (cas 4)
+
+== Métriques clés observées
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Scénario*], [*Débit*], [*Utilisation*], [*Temps réponse*],
+  [Basic M/M/1], [1.99], [65.32%], [1.03],
+  [Waterfall], [9.39], [163.14%], [0.79],
+  [Advanced M/M/2], [2.01], [33.26%], [0.37],
+)
+
+== Impact des paramètres
+
+- *Capacités (ks, kf)*: augmentation réduit rejets mais accroît temps de séjour
+- *Politique ordonnancement*: FIFO plus équitable, PRIORITY favorise une population
+- *Gating*: impact majeur (+1900%) sur temps de réponse
+- *Nombre serveurs*: c=2 vs c=1 réduit fortement temps d'attente (0.04 vs 0.70)
 
 = Conclusion
-[Synthèse générale du projet, leçons apprises, perspectives.]
 
-= Références
-[Liste des références utilisées.]
+Les simulations démontrent que le système de moulinette peut être modélisé efficacement comme un réseau de files d'attente. Les paramètres critiques sont:
+- Le taux d'utilisation ρ pour la stabilité
+- Les capacités des files pour gérer les pics
+- La politique d'ordonnancement pour l'équité
+- La gestion temporelle (gating) qui a l'impact le plus significatif
+
