@@ -11,8 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core import SimulationEngine
 from src.regulation import (
-    PriorityQueue, GatingController, HeterogeneousServer, ChannelsScenario
+    PriorityQueue, GatingController, HeterogeneousServer, ChannelsScenario, GatingAnalyzer
 )
+from src.analysis import PopulationAnalyzer
 from src.core import Job
 
 
@@ -144,6 +145,92 @@ def test_channels_scenario():
     assert results['by_type']['PREPA']['completed'] > 0
 
 
+def test_population_analyzer():
+    """Test du PopulationAnalyzer"""
+    print("Test: Population Analyzer...")
+    
+    engine = SimulationEngine(random_seed=42)
+    
+    scenario = ChannelsScenario(
+        env=engine.env,
+        logger=engine.logger,
+        num_servers=2,
+        scheduling_policy="FIFO"
+    )
+    
+    scenario.add_population("ING", arrival_rate=1.5, service_rate=2.5)
+    scenario.add_population("PREPA", arrival_rate=0.5, service_rate=2.0)
+    
+    scenario.run(100.0)
+    
+    df = engine.logger.get_dataframe()
+    analyzer = PopulationAnalyzer(df)
+    
+    # Test fairness index
+    fairness = analyzer.calculate_fairness_index()
+    assert fairness['status'] == 'ok', "Fairness analysis devrait fonctionner"
+    assert 0 <= fairness['fairness_index'] <= 1, "Fairness index doit être entre 0 et 1"
+    print(f"  ✓ Fairness Index: {fairness['fairness_index']:.4f}")
+    
+    # Test percentiles
+    percentiles = analyzer.calculate_percentiles_by_type()
+    assert 'ING' in percentiles, "ING devrait être dans les résultats"
+    assert 'PREPA' in percentiles, "PREPA devrait être dans les résultats"
+    assert 'p50' in percentiles['ING']['response_time'], "P50 devrait être calculé"
+    assert 'p95' in percentiles['ING']['response_time'], "P95 devrait être calculé"
+    print(f"  ✓ Percentiles calculés pour {len(percentiles)} populations")
+    
+    # Test SLA compliance
+    sla_thresholds = {"ING": 2.0, "PREPA": 3.0}
+    compliance = analyzer.calculate_sla_compliance(sla_thresholds)
+    assert 'ING' in compliance, "Compliance ING devrait être calculée"
+    assert 'compliance_percentage' in compliance['ING'], "Pourcentage devrait être présent"
+    print(f"  ✓ SLA Compliance ING: {compliance['ING']['compliance_percentage']:.2f}%")
+
+
+def test_gating_analyzer():
+    """Test du GatingAnalyzer"""
+    print("Test: Gating Analyzer...")
+    
+    analyzer = GatingAnalyzer(
+        lambda_ing=1.5,
+        mu_ing=2.5,
+        lambda_prepa=0.5,
+        mu_prepa=2.0,
+        num_servers=2
+    )
+    
+    # Test génération des intervalles
+    intervals = analyzer.generate_gating_intervals(tb=50, opening_duration=25, total_duration=200)
+    assert len(intervals) > 0, "Devrait générer des intervalles"
+    assert intervals[0] == (0, 50), "Premier intervalle devrait être (0, 50)"
+    print(f"  ✓ Génération d'intervalles: {len(intervals)} intervalles")
+    
+    # Test simulation simple (rapide)
+    result = analyzer.run_single_configuration(tb=30, ratio=0.5, duration=100, seed=42)
+    assert 'ing_avg_response_time' in result, "Résultat devrait contenir temps ING"
+    assert 'prepa_avg_response_time' in result, "Résultat devrait contenir temps PREPA"
+    assert result['tb'] == 30, "tb devrait être 30"
+    assert result['ratio'] == 0.5, "ratio devrait être 0.5"
+    print(f"  ✓ Simulation unique: ING {result['ing_avg_response_time']:.4f}s")
+    
+    # Test analyse complète (version réduite pour rapidité)
+    print("  Running quick gating analysis...")
+    results_df = analyzer.analyze_gating_variations(
+        tb_values=[30, 50],
+        ratio_values=[0.5],
+        duration=100,
+        seed=42
+    )
+    assert len(results_df) == 2, "Devrait avoir 2 configurations"
+    print(f"  ✓ Analyse de variations: {len(results_df)} configs testées")
+    
+    # Test recommandation
+    recommendation = analyzer.recommend_gating_config(results_df, max_time_increase_pct=200.0)
+    assert 'status' in recommendation, "Recommandation devrait avoir un statut"
+    print(f"  ✓ Recommandation: {recommendation['status']}")
+
+
 def run_all_tests():
     """Exécute tous les tests"""
     print("\n" + "="*60)
@@ -158,6 +245,10 @@ def run_all_tests():
         test_heterogeneous_server()
         print()
         test_channels_scenario()
+        print()
+        test_population_analyzer()
+        print()
+        test_gating_analyzer()
         print()
         
         print("="*60)

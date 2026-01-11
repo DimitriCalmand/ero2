@@ -1,0 +1,52 @@
+================================================================================
+RAPPORT D'ANALYSE AVANCÉE
+================================================================================
+
+PARAMÈTRES DU SYSTÈME:
+  λ (taux d'arrivée): 2.0000
+  μ (taux de service): 3.0000
+  c (serveurs): 2
+  ρ (charge): 0.3333
+
+VÉRIFICATION DE LA LOI DE LITTLE (L = λW):
+  L_observed: 0.814811
+  lambda_observed: 1.978332
+  W_observed: 0.389404
+  lambda_W: 0.770371
+  absolute_error: 0.044440
+  relative_error_percent: 5.454049
+  verifies_little_law: True
+  interpretation: Little's Law verified
+
+COMPARAISON SIMULATION vs THÉORIE M/M/c:
+  Précision globale: Good
+  Erreur moyenne: 5.88%
+
+  Utilisation:
+    Simulée: 0.3390
+    Théorique: 0.3333
+    Erreur: 1.70%
+
+  Temps d'attente:
+    Simulé: 0.0467
+    Théorique: 0.0417
+    Erreur: 12.09%
+
+  Temps de réponse:
+    Simulé: 0.3894
+    Théorique: 0.3750
+    Erreur: 3.84%
+
+ANALYSE VARIANCE/MOYENNE:
+  waiting_time:
+    Ratio variance/moyenne: 0.4622
+    Interprétation: Non-exponential
+  service_time:
+    Ratio variance/moyenne: 0.3513
+    Interprétation: Non-exponential
+
+ANALYSE D'AUTOCORRÉLATION (temps d'attente):
+  Correlation detected at lags: [1, 2, 3, 4]
+  Lags significatifs: [1, 2, 3, 4]
+
+================================================================================

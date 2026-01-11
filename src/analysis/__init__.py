@@ -7,7 +7,17 @@ from .statistics import (
     ConfidenceInterval,
     PerformanceAnalyzer,
     Visualizer,
-    RealDataComparator
+    RealDataComparator,
+    PopulationAnalyzer
+)
+
+from .advanced_metrics import AdvancedMetricsAnalyzer
+
+from .optimizer import ParameterOptimizer
+
+from .time_series import (
+    TimeSeriesAnalyzer,
+    ReplaySimulation
 )
 
 __all__ = [
@@ -15,5 +25,10 @@ __all__ = [
     'ConfidenceInterval',
     'PerformanceAnalyzer',
     'Visualizer',
-    'RealDataComparator'
+    'RealDataComparator',
+    'PopulationAnalyzer',
+    'AdvancedMetricsAnalyzer',
+    'ParameterOptimizer',
+    'TimeSeriesAnalyzer',
+    'ReplaySimulation'
 ]

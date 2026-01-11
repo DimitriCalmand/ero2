@@ -512,3 +512,327 @@ class RealDataComparator:
             }
         
         return {}
+
+
+class PopulationAnalyzer:
+    """
+    Advanced analysis for heterogeneous populations
+    """
+    
+    def __init__(self, df: pd.DataFrame):
+        """
+        Args:
+            df: DataFrame from simulation logger
+        """
+        self.df = df
+    
+    def calculate_fairness_index(self) -> Dict:
+        """
+        Calculate Jain's Fairness Index for populations
+        
+        Jain's Index: J = (sum(x_i))^2 / (n * sum(x_i^2))
+        Where x_i is the response time for each population
+        
+        Returns:
+            Dictionary with fairness metrics
+        """
+        completed = self.df[self.df['event_type'] == 'end_service'].copy()
+        
+        if len(completed) == 0 or 'entity_type' not in completed.columns:
+            return {
+                'fairness_index': 0.0,
+                'status': 'no_data'
+            }
+        
+        # Group by population type
+        response_times = completed.groupby('entity_type')['response_time'].mean()
+        
+        if len(response_times) < 2:
+            return {
+                'fairness_index': 1.0,
+                'status': 'single_population'
+            }
+        
+        # Calculate Jain's Index
+        n = len(response_times)
+        sum_x = response_times.sum()
+        sum_x2 = (response_times ** 2).sum()
+        
+        if sum_x2 == 0:
+            jain_index = 1.0
+        else:
+            jain_index = (sum_x ** 2) / (n * sum_x2)
+        
+        # Calculate response time ratio
+        times_sorted = response_times.sort_values()
+        ratio = times_sorted.iloc[-1] / times_sorted.iloc[0] if times_sorted.iloc[0] > 0 else float('inf')
+        
+        return {
+            'fairness_index': float(jain_index),
+            'response_time_ratio': float(ratio),
+            'min_response_time': float(times_sorted.iloc[0]),
+            'max_response_time': float(times_sorted.iloc[-1]),
+            'populations': list(response_times.index),
+            'avg_response_times': response_times.to_dict(),
+            'interpretation': self._interpret_fairness(jain_index),
+            'status': 'ok'
+        }
+    
+    def _interpret_fairness(self, jain_index: float) -> str:
+        """Interpret Jain's Fairness Index"""
+        if jain_index >= 0.95:
+            return "Excellent fairness (≥0.95)"
+        elif jain_index >= 0.85:
+            return "Good fairness (0.85-0.95)"
+        elif jain_index >= 0.70:
+            return "Fair (0.70-0.85)"
+        elif jain_index >= 0.50:
+            return "Poor fairness (0.50-0.70)"
+        else:
+            return "Very unfair (<0.50)"
+    
+    def calculate_percentiles_by_type(self,
+                                     percentiles: List[float] = [0.50, 0.95, 0.99]) -> Dict:
+        """
+        Calculate percentiles for each population type
+        
+        Args:
+            percentiles: List of percentiles to calculate (e.g., [0.50, 0.95, 0.99])
+            
+        Returns:
+            Dictionary with percentiles by population type
+        """
+        completed = self.df[self.df['event_type'] == 'end_service'].copy()
+        
+        if len(completed) == 0 or 'entity_type' not in completed.columns:
+            return {}
+        
+        results = {}
+        
+        for pop_type, group in completed.groupby('entity_type'):
+            response_times = group['response_time'].dropna()
+            waiting_times = group['waiting_time'].dropna()
+            
+            pop_results = {
+                'count': len(group),
+                'response_time': {},
+                'waiting_time': {}
+            }
+            
+            # Calculate percentiles for response time
+            if len(response_times) > 0:
+                for p in percentiles:
+                    percentile_name = f"p{int(p*100)}"
+                    pop_results['response_time'][percentile_name] = float(
+                        response_times.quantile(p)
+                    )
+                pop_results['response_time']['mean'] = float(response_times.mean())
+                pop_results['response_time']['std'] = float(response_times.std())
+                pop_results['response_time']['min'] = float(response_times.min())
+                pop_results['response_time']['max'] = float(response_times.max())
+            
+            # Calculate percentiles for waiting time
+            if len(waiting_times) > 0:
+                for p in percentiles:
+                    percentile_name = f"p{int(p*100)}"
+                    pop_results['waiting_time'][percentile_name] = float(
+                        waiting_times.quantile(p)
+                    )
+                pop_results['waiting_time']['mean'] = float(waiting_times.mean())
+                pop_results['waiting_time']['std'] = float(waiting_times.std())
+                pop_results['waiting_time']['min'] = float(waiting_times.min())
+                pop_results['waiting_time']['max'] = float(waiting_times.max())
+            
+            results[pop_type] = pop_results
+        
+        return results
+    
+    def calculate_sla_compliance(self,
+                                sla_thresholds: Dict[str, float]) -> Dict:
+        """
+        Calculate SLA compliance for each population
+        
+        Args:
+            sla_thresholds: Dictionary mapping population type to SLA threshold (seconds)
+                           Example: {"ING": 1.0, "PREPA": 2.0}
+        
+        Returns:
+            Dictionary with compliance metrics
+        """
+        completed = self.df[self.df['event_type'] == 'end_service'].copy()
+        
+        if len(completed) == 0 or 'entity_type' not in completed.columns:
+            return {}
+        
+        results = {}
+        
+        for pop_type, group in completed.groupby('entity_type'):
+            if pop_type not in sla_thresholds:
+                continue
+            
+            threshold = sla_thresholds[pop_type]
+            response_times = group['response_time'].dropna()
+            
+            if len(response_times) == 0:
+                continue
+            
+            # Calculate compliance
+            within_sla = (response_times <= threshold).sum()
+            total = len(response_times)
+            compliance_rate = within_sla / total if total > 0 else 0.0
+            
+            # Calculate violations
+            violations = response_times[response_times > threshold]
+            
+            results[pop_type] = {
+                'threshold': threshold,
+                'total_jobs': total,
+                'within_sla': int(within_sla),
+                'violations': int(len(violations)),
+                'compliance_rate': float(compliance_rate),
+                'compliance_percentage': float(compliance_rate * 100),
+                'avg_violation_time': float(violations.mean()) if len(violations) > 0 else 0.0,
+                'max_violation_time': float(violations.max()) if len(violations) > 0 else 0.0,
+                'status': 'compliant' if compliance_rate >= 0.95 else 'non_compliant'
+            }
+        
+        return results
+    
+    def analyze_temporal_patterns_by_type(self,
+                                         time_window: float = 50.0) -> Dict:
+        """
+        Analyze temporal patterns for each population
+        
+        Args:
+            time_window: Time window for aggregation
+            
+        Returns:
+            Dictionary with temporal analysis
+        """
+        completed = self.df[self.df['event_type'] == 'end_service'].copy()
+        
+        if len(completed) == 0 or 'entity_type' not in completed.columns:
+            return {}
+        
+        results = {}
+        
+        for pop_type, group in completed.groupby('entity_type'):
+            # Create time bins
+            group = group.copy()
+            group['time_bin'] = (group['time'] // time_window).astype(int)
+            
+            # Aggregate by time bin
+            temporal_stats = group.groupby('time_bin').agg({
+                'response_time': ['mean', 'std', 'count'],
+                'waiting_time': ['mean', 'std']
+            }).reset_index()
+            
+            # Calculate coefficient of variation over time
+            response_means = temporal_stats['response_time']['mean']
+            cv = response_means.std() / response_means.mean() if response_means.mean() > 0 else 0
+            
+            results[pop_type] = {
+                'time_window': time_window,
+                'num_windows': len(temporal_stats),
+                'coefficient_of_variation': float(cv),
+                'min_response_time_period': float(response_means.min()),
+                'max_response_time_period': float(response_means.max()),
+                'avg_jobs_per_window': float(temporal_stats['response_time']['count'].mean()),
+                'stability': 'stable' if cv < 0.2 else 'variable' if cv < 0.5 else 'unstable'
+            }
+        
+        return results
+    
+    def generate_population_report(self,
+                                  sla_thresholds: Optional[Dict[str, float]] = None,
+                                  output_file: str = "population_analysis_report.txt") -> None:
+        """
+        Generate comprehensive report for population analysis
+        
+        Args:
+            sla_thresholds: SLA thresholds for compliance analysis
+            output_file: Output file path
+        """
+        with open(output_file, 'w') as f:
+            f.write("=" * 70 + "\n")
+            f.write("  POPULATION ANALYSIS REPORT\n")
+            f.write("=" * 70 + "\n\n")
+            
+            # Fairness analysis
+            fairness = self.calculate_fairness_index()
+            f.write("FAIRNESS ANALYSIS\n")
+            f.write("-" * 70 + "\n")
+            
+            if fairness['status'] == 'ok':
+                f.write(f"Jain's Fairness Index: {fairness['fairness_index']:.4f}\n")
+                f.write(f"Interpretation: {fairness['interpretation']}\n")
+                f.write(f"Response Time Ratio: {fairness['response_time_ratio']:.2f}x\n")
+                f.write(f"Min Response Time: {fairness['min_response_time']:.4f}s\n")
+                f.write(f"Max Response Time: {fairness['max_response_time']:.4f}s\n\n")
+                
+                f.write("Average Response Times by Population:\n")
+                for pop, time in fairness['avg_response_times'].items():
+                    f.write(f"  {pop}: {time:.4f}s\n")
+            else:
+                f.write(f"Status: {fairness['status']}\n")
+            
+            f.write("\n")
+            
+            # Percentiles
+            percentiles = self.calculate_percentiles_by_type()
+            if percentiles:
+                f.write("PERCENTILES BY POPULATION\n")
+                f.write("-" * 70 + "\n")
+                
+                for pop_type, stats in percentiles.items():
+                    f.write(f"\n{pop_type} (n={stats['count']}):\n")
+                    f.write("  Response Time:\n")
+                    for metric, value in stats['response_time'].items():
+                        f.write(f"    {metric}: {value:.4f}s\n")
+                    
+                    if stats['waiting_time']:
+                        f.write("  Waiting Time:\n")
+                        for metric, value in stats['waiting_time'].items():
+                            f.write(f"    {metric}: {value:.4f}s\n")
+            
+            f.write("\n")
+            
+            # SLA compliance
+            if sla_thresholds:
+                compliance = self.calculate_sla_compliance(sla_thresholds)
+                if compliance:
+                    f.write("SLA COMPLIANCE\n")
+                    f.write("-" * 70 + "\n")
+                    
+                    for pop_type, comp in compliance.items():
+                        f.write(f"\n{pop_type}:\n")
+                        f.write(f"  SLA Threshold: {comp['threshold']}s\n")
+                        f.write(f"  Total Jobs: {comp['total_jobs']}\n")
+                        f.write(f"  Within SLA: {comp['within_sla']} ({comp['compliance_percentage']:.2f}%)\n")
+                        f.write(f"  Violations: {comp['violations']}\n")
+                        f.write(f"  Status: {comp['status'].upper()}\n")
+                        
+                        if comp['violations'] > 0:
+                            f.write(f"  Avg Violation Time: {comp['avg_violation_time']:.4f}s\n")
+                            f.write(f"  Max Violation Time: {comp['max_violation_time']:.4f}s\n")
+            
+            f.write("\n")
+            
+            # Temporal patterns
+            temporal = self.analyze_temporal_patterns_by_type()
+            if temporal:
+                f.write("TEMPORAL PATTERNS\n")
+                f.write("-" * 70 + "\n")
+                
+                for pop_type, pattern in temporal.items():
+                    f.write(f"\n{pop_type}:\n")
+                    f.write(f"  Stability: {pattern['stability']}\n")
+                    f.write(f"  Coefficient of Variation: {pattern['coefficient_of_variation']:.4f}\n")
+                    f.write(f"  Response Time Range: {pattern['min_response_time_period']:.4f}s - {pattern['max_response_time_period']:.4f}s\n")
+                    f.write(f"  Avg Jobs per Window: {pattern['avg_jobs_per_window']:.1f}\n")
+            
+            f.write("\n" + "=" * 70 + "\n")
+            f.write("End of Report\n")
+            f.write("=" * 70 + "\n")
+        
+        print(f"✓ Population analysis report saved to {output_file}")

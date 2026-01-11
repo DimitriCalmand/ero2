@@ -1,0 +1,94 @@
+======================================================================
+  POPULATION ANALYSIS REPORT
+======================================================================
+
+FAIRNESS ANALYSIS
+----------------------------------------------------------------------
+Jain's Fairness Index: 0.9920
+Interpretation: Excellent fairness (≥0.95)
+Response Time Ratio: 1.20x
+Min Response Time: 0.4831s
+Max Response Time: 0.5783s
+
+Average Response Times by Population:
+  ING: 0.4831s
+  PREPA: 0.5783s
+
+PERCENTILES BY POPULATION
+----------------------------------------------------------------------
+
+ING (n=737):
+  Response Time:
+    p50: 0.3536s
+    p95: 1.4036s
+    p99: 2.0507s
+    mean: 0.4831s
+    std: 0.4456s
+    min: 0.0024s
+    max: 2.7702s
+  Waiting Time:
+    p50: 0.0000s
+    p95: 0.4880s
+    p99: 1.0148s
+    mean: 0.0750s
+    std: 0.1965s
+    min: 0.0000s
+    max: 1.3308s
+
+PREPA (n=236):
+  Response Time:
+    p50: 0.4011s
+    p95: 1.6976s
+    p99: 2.7543s
+    mean: 0.5783s
+    std: 0.5921s
+    min: 0.0026s
+    max: 4.0737s
+  Waiting Time:
+    p50: 0.0000s
+    p95: 0.5856s
+    p99: 0.8860s
+    mean: 0.0835s
+    std: 0.1983s
+    min: 0.0000s
+    max: 0.9835s
+
+SLA COMPLIANCE
+----------------------------------------------------------------------
+
+ING:
+  SLA Threshold: 1.0s
+  Total Jobs: 737
+  Within SLA: 646 (87.65%)
+  Violations: 91
+  Status: NON_COMPLIANT
+  Avg Violation Time: 1.4217s
+  Max Violation Time: 2.7702s
+
+PREPA:
+  SLA Threshold: 2.0s
+  Total Jobs: 236
+  Within SLA: 228 (96.61%)
+  Violations: 8
+  Status: COMPLIANT
+  Avg Violation Time: 2.6522s
+  Max Violation Time: 4.0737s
+
+TEMPORAL PATTERNS
+----------------------------------------------------------------------
+
+ING:
+  Stability: stable
+  Coefficient of Variation: 0.1833
+  Response Time Range: 0.3353s - 0.5931s
+  Avg Jobs per Window: 73.7
+
+PREPA:
+  Stability: variable
+  Coefficient of Variation: 0.2641
+  Response Time Range: 0.3786s - 0.8498s
+  Avg Jobs per Window: 23.6
+
+======================================================================
+End of Report
+======================================================================

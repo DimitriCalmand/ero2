@@ -1,0 +1,35 @@
+======================================================================
+  GATING ANALYSIS REPORT
+======================================================================
+
+Configuration:
+  Population ING: λ=1.5, μ=2.5
+  Population PREPA: λ=0.5, μ=2.0
+  Servers: 2
+
+Reference (No Gating):
+  ING response time: 0.4831s
+  PREPA response time: 0.5783s
+
+Impact Analysis:
+  Configurations tested: 16
+  Min ING time increase: 5715.76%
+  Max ING time increase: 27971.41%
+  Min PREPA time increase: 4809.06%
+  Max PREPA time increase: 25717.81%
+  Max queue observed: 441.0 jobs
+
+======================================================================
+RECOMMENDATION
+======================================================================
+
+✗ No configuration meets constraint (<100.0% increase)
+
+Best compromise found:
+  tb=50.0, ratio=0.75
+  ING increase: +5715.76%
+  PREPA increase: +4839.72%
+
+======================================================================
+End of Report
+======================================================================

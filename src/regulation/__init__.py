@@ -8,11 +8,13 @@ from .gating import GatingController
 from .server import HeterogeneousServer
 from .population import PopulationGenerator
 from .scenario import ChannelsScenario
+from .gating_analysis import GatingAnalyzer
 
 __all__ = [
     'PriorityQueue',
     'GatingController',
     'HeterogeneousServer',
     'PopulationGenerator',
-    'ChannelsScenario'
+    'ChannelsScenario',
+    'GatingAnalyzer'
 ]
