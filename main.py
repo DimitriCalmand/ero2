@@ -27,6 +27,7 @@ from src.analysis import (
     Visualizer,
     RealDataComparator,
 )
+from src.analysis.dashboard import Dashboard
 
 
 def scenario_basic(duration: float = 1000.0, seed: int = 42):
@@ -91,7 +92,10 @@ def scenario_basic(duration: float = 1000.0, seed: int = 42):
 
 
 def scenario_waterfall(
-    duration: float = 1000.0, seed: int = 42, include_infinite: bool = True
+    duration: float = 1000.0,
+    seed: int = 42,
+    include_infinite: bool = True,
+    setup_only: bool = False,
 ):
     """
     Scénario Waterfall: comparaison files finies vs loss system, incluant simulation infinie
@@ -100,8 +104,38 @@ def scenario_waterfall(
         duration: Durée de la simulation
         seed: Graine aléatoire
         include_infinite: Inclure la simulation avec files infinies
+        setup_only: Si True, retourne l'engine et les files pour le dashboard
     """
     print("=== SCÉNARIO WATERFALL: Analyses Multiples ===\n")
+
+    if setup_only:
+        print("--- Mode Dashboard (Configuration Reference) ---")
+        config = {
+            "name": "Reference (Standard)",
+            "arrival": 6.0,  # High traffic to show queues filling
+            "exec": 2.5,
+            "feed": 1.5,
+            "servers": 2,
+            "ks": 10,
+            "kf": 10,
+        }
+        engine = SimulationEngine(random_seed=seed)
+        scenario = WaterfallScenario(
+            env=engine.env,
+            logger=engine.logger,
+            num_servers=config["servers"],
+            execution_queue_size=config["ks"],
+            feedback_queue_size=config["kf"],
+            execution_rate=config["exec"],
+            feedback_rate=config["feed"],
+            arrival_rate=config["arrival"],
+            duration=duration,
+        )
+        engine.env.process(scenario.arrivals())
+        return engine, {
+            "Processing (Execution)": [scenario.execution_queue],
+            "Output (Feedback)": [scenario.feedback_queue],
+        }
 
     if include_infinite:
         print("--- Simulation Infinie (Files Illimitées) ---")
@@ -347,13 +381,16 @@ def scenario_backup(duration: float = 1000.0, seed: int = 42):
     return engine.get_results(), results
 
 
-def scenario_channels(duration: float = 1000.0, seed: int = 42):
+def scenario_channels(
+    duration: float = 1000.0, seed: int = 42, setup_only: bool = False
+):
     """
     Scénario Channels: populations hétérogènes ING/PREPA
 
     Args:
         duration: Durée de la simulation
         seed: Graine aléatoire
+        setup_only: Si True, retourne l'engine et les files pour le dashboard
     """
     print("=== SCÉNARIO CHANNELS: Populations Hétérogènes ===\n")
 
@@ -363,6 +400,24 @@ def scenario_channels(duration: float = 1000.0, seed: int = 42):
     mu_ing = 2.5
     mu_prepa = 2.0
     num_servers = 2
+
+    if setup_only:
+        print("--- Mode Dashboard (Politique PRIORITY) ---")
+        engine = SimulationEngine(random_seed=seed)
+        scenario = ChannelsScenario(
+            env=engine.env,
+            logger=engine.logger,
+            num_servers=num_servers,
+            scheduling_policy="PRIORITY",
+        )
+        scenario.add_population("ING", lambda_ing, mu_ing)
+        scenario.add_population("PREPA", lambda_prepa, mu_prepa)
+        
+        # Start generators for dashboard
+        for pop_type, generator in scenario.populations.items():
+            engine.env.process(generator.generate(scenario.server, duration))
+            
+        return engine, {"Priority Queue": [scenario.server.custom_queue]}
 
     print(f"Paramètres:")
     print(f"  Population ING: λ={lambda_ing}, μ={mu_ing}")
@@ -502,12 +557,37 @@ def main():
     parser.add_argument(
         "--visualize", action="store_true", help="Générer les visualisations"
     )
+    parser.add_argument(
+        "--dashboard", action="store_true", help="Lancer le dashboard interactif"
+    )
 
     args = parser.parse_args()
 
     print(f"\n{'=' * 60}")
     print(f"  SIMULATEUR DE MOULINETTE - PROJET ERO2")
     print(f"{'=' * 60}\n")
+
+    # Dashboard Mode
+    if args.dashboard:
+        print("Lancement du Dashboard Interactif...")
+        engine = None
+        queues_groups = None
+
+        if args.scenario == "waterfall":
+            engine, queues_groups = scenario_waterfall(
+                args.duration, args.seed, setup_only=True
+            )
+        elif args.scenario == "channels":
+            engine, queues_groups = scenario_channels(
+                args.duration, args.seed, setup_only=True
+            )
+        else:
+            print(f"Le scénario '{args.scenario}' ne supporte pas encore le dashboard.")
+            return
+
+        dashboard = Dashboard(engine, queues_groups, args.duration)
+        dashboard.show()
+        return
 
     # Exécution du scénario
     df = None
