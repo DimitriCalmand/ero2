@@ -99,124 +99,13 @@ Le générateur de jobs est responsable de la création de nouveaux jobs dans le
   [Le type de job généré (job_type).]
 )
 
-= Étude de cas
-Les scénarios suivants ont été simulés pour analyser le comportement du système de moulinette en tant que réseau de files d'attente.
+= Validation Théorique du moteur de simulation
 
-== Cas 1: Files en Cascade (Waterfall)
+Afin de valider le bon fonctionnement du moteur de simulation, nous avons comparé les résultats obtenus avec les prédictions théoriques d'un système M/M/c classique. Nous avons choisi des paramètres simples pour faciliter la comparaison.
 
-Dans ce modèle, tout agent de la population suit le processus séquentiel suivant :
-1. Un push tag place le code dans une file d'attente FIFO pour l'exécution de la test-suite (K serveurs).
-2. Le résultat de la test-suite est placé dans une file d'attente FIFO pour l'envoi vers le front (1 serveur).
+=== Paramètres de test
 
-Nous proposons un système d'attente modélisant ce contexte, en commençant par des files infinies, puis en introduisant des contraintes finies pour analyser les proportions de refus.
-
-=== Implémentation
-TODO
-
-=== Système naïf (files infinies)
-TODO
-
-=== Système avec files finies
-TODO
-
-=== Backup des résultats
-TODO
-
-=== Paramètres
-
-Configuration de référence testée:
-- λ = 3.0 jobs/unité
-- μ_exec = 2.5 jobs/unité (file d'exécution)
-- μ_feed = 1.5 jobs/unité (file de feedback)
-- c = 2 serveurs
-- ks = 5 (capacité file exécution)
-- kf = 5 (capacité file feedback)
-
-=== Comportement du système
-
-Le système waterfall présente deux files en cascade avec capacités finies. Le comportement varie selon les capacités:
-
-#table(
-  columns: (auto, auto, auto, auto),
-  [*Configuration*], [*Jobs Exec*], [*Rejet Exec*], [*Temps séjour*],
-  [Sans files (loss)], [4499], [26.0%], [-],
-  [Reference (ks=5, kf=5)], [5897], [1.0%], [3.87],
-  [Petit ks (ks=2, kf=10)], [5674], [7.0%], [7.29],
-  [Petit kf (ks=10, kf=2)], [5980], [0.1%], [2.14],
-  [High traffic], [8188], [0.0%], [5.25]
-)
-
-#figure(
-  image("results/waterfall_scenario/queue_length.png", width: 90%),
-  caption: [Longueurs de files pour les configurations waterfall]
-)
-
-Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée.
-
-#figure(
-  image("results/waterfall_scenario/waiting_time.png", width: 90%),
-  caption: [Distribution des temps d'attente en cascade]
-)
-
-== Cas 2: Channels et Dams
-
-=== Implémentation
-TODO
-
-=== Analyse des channels
-TODO
-
-=== Gating
-TODO
-
-=== Paramètres
-
-- Population ING: λ_ING = 1.5, μ_ING = 2.5
-- Population PREPA: λ_PREPA = 0.5, μ_PREPA = 2.0  
-- Serveurs: c = 2
-- Politiques testées: FIFO, SJF, PRIORITY
-
-=== Comportement du système
-
-Le système gère deux populations avec des caractéristiques distinctes. La politique d'ordonnancement influence les performances:
-
-#table(
-  columns: (auto, auto, auto, auto),
-  [*Politique*], [*ING (temps)*], [*PREPA (temps)*], [*Différence*],
-  [FIFO], [0.4827], [0.5597], [+16.0%],
-  [SJF], [0.4647], [0.5490], [+18.1%],
-  [PRIORITY], [0.4679], [0.5920], [+26.5%]
-)
-
-FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs.
-
-== Cas 4: Barrage Temporel (Gating)
-
-=== Paramètres
-
-- Population ING: λ = 1.5, μ = 2.5
-- Population PREPA: λ = 0.5, μ = 2.0
-- Serveurs: c = 2
-- Période de barrage: tb = 100
-- Durée d'ouverture: 50 unités
-- Intervalles de fermeture testés: [(0, 100), (150, 250), (300, 400)]
-
-=== Comportement du système
-
-Le gating introduit des périodes de fermeture pendant lesquelles la population PREPA ne peut pas accéder au système. Cela augmente drastiquement les temps de réponse:
-
-#table(
-  columns: (auto, auto, auto, auto),
-  [*Population*], [*Sans gating*], [*Avec gating*], [*Augmentation*],
-  [ING], [0.4869], [9.8174], [+1916.4%],
-  [PREPA], [0.5519], [10.0912], [+1728.5%]
-)
-
-Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, créant un effet de "burst" lors de la réouverture. L'impact est massif sur les deux populations malgré que seule PREPA soit bloquée directement.
-
-== Cas 5: Validation Théorique (Advanced Metrics)
-
-=== Paramètres
+Pour cette validation, nous avons utilisé les paramètres suivants :
 
 - λ = 2.0 jobs/unité
 - μ = 3.0 jobs/unité
@@ -246,10 +135,130 @@ La loi de Little stipule: L = λW (nombre moyen dans le système = taux d'arriv�
 
 La simulation présente une *excellente* concordance avec la théorie M/M/c (erreur moyenne 0.63%). Les écarts sont dus à la variance d'échantillonnage.
 
+= Étude de cas
+Les scénarios suivants ont été simulés pour analyser le comportement du système de moulinette en tant que réseau de files d'attente.
+
+== Cas 1: Files en Cascade (Waterfall)
+
+Dans ce modèle, tout agent de la population suit le processus séquentiel suivant :
+1. Un push tag place le code dans une file d'attente FIFO pour l'exécution de la test-suite (K serveurs).
+2. Le résultat de la test-suite est placé dans une file d'attente FIFO pour l'envoi vers le front (1 serveur).
+
+Nous proposons un système d'attente modélisant ce contexte, en commençant par des files infinies, puis en introduisant des contraintes finies pour analyser les proportions de refus.
+
+=== Implémentation
+Afin de modéliser le système waterfall grâce à notre moteur de simulation, plusieurs composants ont été mis en place.
+
+==== LimitedQueue
+Une classe LimitedQueue a été créée pour représenter une file d'attente avec une capacité maximale. Cette classe hérite de la classe Resource de SimPy et ajoute une logique pour gérer les rejets lorsque la capacité est atteinte.
+
+==== WaterfallSystem
+La classe WaterfallSystem encapsule la logique du système waterfall. Elle contient deux files d'attente : une pour l'exécution des test-suites et une pour le feedback. Chaque file d'attente est associée à un ensemble de serveurs.
+
+=== Système naïf (files infinies)
+Les paramètres choisis pour ce scénario se basent sur une analyse des tags recensés sur la piscine C 2025. Nous avons estimé un taux d'arrivée moyen de λ = 3.0 jobs/unité, avec des taux de service de μ_exec = 2.5 jobs/unité pour la file d'exécution et μ_feed = 1.5 jobs/unité pour la file de feedback. Le système comporte c = 2 serveurs pour l'exécution.
+
 #figure(
-  image("results/advanced_scenario/queue_length.png", width: 90%),
-  caption: [Stabilité du système avec c=2 serveurs]
+  image("results/waterfall_scenario/waiting_time.png", width: 90%),
+  caption: [Distribution des temps d'attente en cascade]
 )
+
+TODO faire la simu pour ce scénario
+
+=== Système avec files finies
+Pour un système avec files finies, nous avons testé différentes configurations de capacités pour les files d'exécution (ks) et de feedback (kf). Les paramèters de base restent les mêmes que pour le système naïf, avec l'ajout de capacités finies. Les configurations testées sont les suivantes :
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Configuration*], [*Avg Jobs Exec*], [*Avg Rejet Exec*], [*Avg Temps séjour (unités de tps)*],
+  [Sans files (loss)], [4499], [26.0%], [-],
+  [Reference (ks=5, kf=5)], [5897], [1.0%], [3.87],
+  [Petit ks (ks=2, kf=10)], [5674], [7.0%], [7.29],
+  [Petit kf (ks=10, kf=2)], [5980], [0.1%], [2.14],
+  [High traffic], [8188], [0.0%], [5.25]
+)
+
+Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée. On peut observer un compromis entre rejets et temps de séjour selon les capacités choisies. La solution sans file est évidemment la moins performante avec 26.0% de rejets. Un grand kf et un petit ks montre également un taux de rejet élevé (7.0%) et un temps de séjour plus long (7.29).
+La meilleure configuration semble alors un petit kf et un grand ks, minimisant les rejets (0.1%) et le temps de séjour (2.14).
+
+Il est à noter de quand le cadre de la Moulinette, il semble préférable de prioriser *un faible taux de rejet* (expérience utilisateur) au détriment d'un temps de séjour plus long. En effet, un étudiant préférera attendre plus longtemps pour obtenir un retour plutôt que de voir son tag rejeté et devoir le re-soumettre.
+
+
+=== Backup des résultats
+TODO tester si le backup influence les performances globales du système waterfall + taux de rejet front
+
+Ici, nous ajoutons la notion de backup des résultats des jobs traités. Celle-ci permet de sauvegarder les résultats sur un serveur dédié après traitement, afin d'assurer l'affichage ultérieur sur le front.
+
+Même si cette fonctionnalité n'impacte pas directement le temps de traitement des jobs, elle peut influencer la charge globale du système et potentiellement les performances si le serveur de backup est surchargé.
+
+Des backups probabilistes peuvent alors être mis en place pour économiser des ressources, au prix d'une couverture partielle des jobs sauvegardés. Un solution envisageant de sauvegarder avec une probabilité fonction de la charge du serveur de backup pourrait être intéressante à étudier.
+
+Dans ce scénario, nous avons introduit un serveur de backup pour sauvegarder les résultats des jobs traités. Le serveur principal a un taux de service de μ = 3.0 jobs/unité, tandis que le serveur de backup a un taux de service plus élevé de μ_b = 10.0 jobs/unité. Le système comporte c = 2 serveurs principaux.
+
+Trois stratégies de backup ont été testées:
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Stratégie*], [*Avg Jobs traités*], [*Avg Jobs sauvegardés*], [*Avg Taux backup*],
+  [Systematic], [4002], [4002], [100.0%],
+  [Random 50%], [3934], [2013], [51.17%],
+  [Random 20%], [4000], [811], [20.28%]
+)
+
+Le temps de backup moyen reste stable (~0.10) pour toutes les stratégies. La stratégie systematic garantit la sauvegarde de tous les jobs, tandis que les stratégies probabilistes permettent d'économiser des ressources au prix d'une couverture partielle.
+
+#figure(
+  image("results/backup_scenario/response_time_by_type.png", width: 90%),
+  caption: [Temps de réponse selon la stratégie de backup]
+)
+
+== Cas 2: Channels et Dams
+
+=== Implémentation
+TODO
+
+=== Analyse des channels
+- Population ING: λ_ING = 1.5, μ_ING = 2.5
+- Population PREPA: λ_PREPA = 0.5, μ_PREPA = 2.0  
+- Serveurs: c = 2
+- Politiques testées: FIFO, SJF, PRIORITY
+
+Le système gère deux populations avec des caractéristiques distinctes. Voici les différentes politiques d'ordonnancement testées :
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Politique*], [*ING (unités de tps moy)*], [*PREPA (unités de tps moy)*], [*Différence*],
+  [FIFO], [0.4827], [0.5597], [+16.0%],
+  [SJF], [0.4647], [0.5490], [+18.1%],
+  [PRIORITY], [0.4679], [0.5920], [+26.5%]
+)
+
+FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs.
+
+TODO faire la simu
+
+=== Gating
+Le gating introduit des périodes de fermeture pendant lesquelles une population ne peut pas accéder au système. Cela augmente drastiquement les temps de réponse:
+
+- Population ING: λ = 1.5, μ = 2.5
+- Population PREPA: λ = 0.5, μ = 2.0
+- Serveurs: c = 2
+- Période de barrage: tb = 100
+- Durée d'ouverture: 50 unités
+- Intervalles de fermeture testés: [(0, 100), (150, 250), (300, 400)]
+
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*Population*], [*Sans gating*], [*Avec gating*], [*Augmentation*],
+  [ING], [0.4869], [9.8174], [+1916.4%],
+  [PREPA], [0.5519], [10.0912], [+1728.5%]
+)
+
+Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, créant un effet de "burst" lors de la réouverture. L'impact est massif sur les deux populations malgré que seule PREPA soit bloquée directement. L'impact est donc à prendre en compte sérieusement dans la conception du système.
+
+TODO proposer un système pour réduire le temps de séjour des deux populations + simu
+
 
 == Cas 6: Stratégies de Backup
 
@@ -261,24 +270,6 @@ La simulation présente une *excellente* concordance avec la théorie M/M/c (err
 - c = 2 serveurs
 - Durée: 2000 unités
 
-=== Comportement des stratégies
-
-Trois stratégies de backup ont été testées:
-
-#table(
-  columns: (auto, auto, auto, auto),
-  [*Stratégie*], [*Jobs traités*], [*Jobs sauvegardés*], [*Taux backup*],
-  [Systematic], [4002], [4004], [100.05%],
-  [Random 50%], [3934], [2013], [51.17%],
-  [Random 20%], [4000], [811], [20.28%]
-)
-
-Le temps de backup moyen reste stable (~0.10) pour toutes les stratégies. La stratégie systematic garantit la sauvegarde de tous les jobs, tandis que les stratégies probabilistes permettent d'économiser des ressources au prix d'une couverture partielle.
-
-#figure(
-  image("results/backup_scenario/response_time_by_type.png", width: 90%),
-  caption: [Temps de réponse selon la stratégie de backup]
-)
 
 = Synthèse et Observations
 
