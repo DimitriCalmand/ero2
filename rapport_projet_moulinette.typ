@@ -33,7 +33,7 @@
   #v(0.5em)
   #text(1.2em, "Date : Janvier 2026") // Static date for template
   #v(5em)
-  #text(1em, "École Pour l'Informatique et les Techniques Avancées")
+  #text(1em, "EPITA")
 ]
 
 #pagebreak()
