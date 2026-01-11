@@ -1,5 +1,5 @@
 #set document(
-  title: "Rapport de Projet : Moulinette en tant que Système de File d'Attente",
+  title: "Rapport de Projet : Moulinette en tant que Système de Files d'Attente",
 )
 
 #set page(
@@ -45,7 +45,7 @@
 = Introduction
 Ce rapport présente une analyse factuelle du simulateur de moulinette EPITA modélisé comme un système de files d'attente. Nous avons testé différents scénarios avec des paramètres variés pour évaluer le comportement du système. Les résultats sont basés sur des simulations à événements discrets utilisant SimPy.
 
-= Terminologie
+= Terminologie - Rappels
 Voici quelques précisions sur la terminologie utilisée dans ce projet.
 
 == Qu'est-ce qu'un utilisateur?
@@ -105,12 +105,10 @@ Afin de valider le bon fonctionnement du moteur de simulation, nous avons compar
 
 === Paramètres de test
 
-Pour cette validation, nous avons utilisé les paramètres suivants :
-
 - λ = 2.0 jobs/unité
 - μ = 3.0 jobs/unité
 - c = 2 serveurs
-- ρ = 0.3333
+- ρ = 0.33
 
 === Vérification Loi de Little
 
@@ -156,30 +154,68 @@ Une classe LimitedQueue a été créée pour représenter une file d'attente ave
 La classe WaterfallSystem encapsule la logique du système waterfall. Elle contient deux files d'attente : une pour l'exécution des test-suites et une pour le feedback. Chaque file d'attente est associée à un ensemble de serveurs.
 
 === Système naïf (files infinies)
-Les paramètres choisis pour ce scénario se basent sur une analyse des tags recensés sur la piscine C 2025. Nous avons estimé un taux d'arrivée moyen de λ = 3.0 jobs/unité, avec des taux de service de μ_exec = 2.5 jobs/unité pour la file d'exécution et μ_feed = 1.5 jobs/unité pour la file de feedback. Le système comporte c = 2 serveurs pour l'exécution.
+Le coût le plus important dans le système étant les serveurs d'exécution, nous allons focaliser notre analyse sur cette variable et pour l'instant fixer les autres:
 
-#figure(
-  image("results/waterfall_scenario/waiting_time.png", width: 90%),
-  caption: [Distribution des temps d'attente en cascade]
+#list(
+  [Taux de service des serveurs d'exécution μ_exec = 2.5 jobs/unité],
+  [Taux de service du serveur de feedback μ_feed = 1.5 jobs/unité],
+  [Grâce à un fichier de tags récupéré sur la durée de la piscine 2026, nous avons estimé lambda des arrivées moyen à environ *0.037*.]
 )
 
-TODO faire la simu pour ce scénario
+==== Stabilité du système
+Le taux d'utilisation global du système est donné par:
+ρ = λ / cμ. Si ρ < 1, le système est stable.
+
+Ici, le goulot d'étranglement est le serveur de feedback (μ_feed < μ_exec). Avec un seul serveur de feedback, nous avons:
+ρ = λ / μ_feed = 0.037 / 1.5 = 0.0247 < 1, donc le système est stable.
+
+==== Résultats
+Après simulation du système waterfall avec files infinies, nous obtenons les résultats suivants:
+
+#table(
+  columns: (auto, auto, auto),
+  [*Métrique*], [*Simulation c=1*], [*Simulation c=3*],
+  [*Avg Temps de séjour (unités de tps)*], [2.11], [2.01],
+  [*Avg ariance Temps de séjour*], [10.89], [13.71],
+  [*NB jobs traités*], [159 833], [159 833],
+  [*Taux de rejet*], [0.0%], [0.0%]
+)
+
+==== Observations
+Comme prévu, le système ne rejète aucun job avec des files infinies. Le temps de séjour moyen est de 2.11 unités de temps avec un seul serveur d'exécution, et diminue légèrement à 2.01 unités avec trois serveurs (temps de séjour plus court de 4.6%). On peut également noter que le système est stable en pratique comme en théorie.
+
+==== Recommandations
+On constate donc que l'ajout de serveurs d'exécution réduit le temps de séjour que marginalement dans ce contexte. Le risque le plus important détecté dans ce modèle est le délai imprévisible. En effet, on remarque une variance importante du temps de séjour (10.89 avec c=1, 13.71 avec c=3). Cela peut poser problème pour l'expérience utilisateur, car un étudiant pourrait attendre longtemps pour obtenir un retour. Ce comportement peut donc être une source de frustration et réduire la variance du temps de séjour est un objectif important.
 
 === Système avec files finies
-Pour un système avec files finies, nous avons testé différentes configurations de capacités pour les files d'exécution (ks) et de feedback (kf). Les paramèters de base restent les mêmes que pour le système naïf, avec l'ajout de capacités finies. Les configurations testées sont les suivantes :
+Pour un système plus réaliste, nous introduisons les paramètres ks et kf des files finies. Les paramèters de base restent les mêmes que pour le système naïf.
+Le but est de comprendre l'impact des capacités des files sur les performances globales du système, notamment le taux de rejet et le temps de séjour.
+
+==== Analyse de ks
+Ici on garde kf large (20) pour se concentrer sur l'impact de ks (capacité de la file d'exécution).
 
 #table(
   columns: (auto, auto, auto, auto),
-  [*Configuration*], [*Avg Jobs Exec*], [*Avg Rejet Exec*], [*Avg Temps séjour (unités de tps)*],
-  [Sans files (loss)], [4499], [26.0%], [-],
-  [Reference (ks=5, kf=5)], [5897], [1.0%], [3.87],
-  [Petit ks (ks=2, kf=10)], [5674], [7.0%], [7.29],
-  [Petit kf (ks=10, kf=2)], [5980], [0.1%], [2.14],
-  [High traffic], [8188], [0.0%], [5.25]
+  [*ks*], [*Avg taux de rejet*], [*nb jobs rejetés*], [*Notes sur l'expérience*],
+  [1], [3.46%], [5 526], [Rejets fréquents, temps de séjour moyen 2.53],
+  [5], [1.11%], [1 781], [Tolérable mais beaucoup d'utilisateurs frustrés, temps de séjour moyen 2.60],
+  [20], [0.09%], [136], [Rejets très rares, temps de séjour moyen 2.75],
 )
 
-Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée. On peut observer un compromis entre rejets et temps de séjour selon les capacités choisies. La solution sans file est évidemment la moins performante avec 26.0% de rejets. Un grand kf et un petit ks montre également un taux de rejet élevé (7.0%) et un temps de séjour plus long (7.29).
-La meilleure configuration semble alors un petit kf et un grand ks, minimisant les rejets (0.1%) et le temps de séjour (2.14).
+La taille de la queue d'exécution contrôle directement la capacité du système à absorber les pics de charge. Un ks trop faible entraîne des rejets fréquents, impactant négativement l'expérience utilisateur. À l'inverse, un ks plus élevé réduit les rejets mais augmente légèrement le temps de séjour moyen.
+
+==== Analyse de kf
+Ici on garde ks large (20) pour se concentrer sur l'impact de kf (capacité de la file de feedback).
+
+#table(
+  columns: (auto, auto, auto, auto),
+  [*kf*], [*Avg taux de rejet*], [*nb jobs rejetés*], [*Notes sur l'expérience*],
+  [1], [11.22%], [17 925], [Rejets trop fréquents 1 tags sur 10 a une page blanche],
+  [5], [2.38%], [3 798], [Rejets encore trop fréquents],
+  [20], [0.18%], [290], [Acceptable, très peu de rejets],
+)
+
+Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée. On remarque que des valeurs conseillées pour ks et kf se situent autour de 20 pour minimiser les rejets tout en gardant un temps de séjour raisonnable.
 
 Il est à noter de quand le cadre de la Moulinette, il semble préférable de prioriser *un faible taux de rejet* (expérience utilisateur) au détriment d'un temps de séjour plus long. En effet, un étudiant préférera attendre plus longtemps pour obtenir un retour plutôt que de voir son tag rejeté et devoir le re-soumettre.
 
@@ -215,7 +251,13 @@ Le temps de backup moyen reste stable (~0.10) pour toutes les stratégies. La st
 == Cas 2: Channels et Dams
 
 === Implémentation
-TODO
+De même que pour le système waterfall, quelques composants spécifiques ont été développés pour modéliser les channels et dams.
+
+==== HeterogeneousServer
+Une classe HeterogeneousServer a été créée pour représenter des serveurs avec des capacités de traitement différentes selon le type de job. Cette classe ajoute une logique pour gérer les taux de service variables.
+
+==== GatingController
+La classe GatingController gère les périodes de fermeture (gating) pour une population spécifique. Elle contrôle l'accès des jobs à la file d'attente en fonction des intervalles de temps définis.
 
 === Analyse des channels
 - Population ING: λ_ING = 1.5, μ_ING = 2.5
@@ -259,18 +301,7 @@ Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, cr
 
 TODO proposer un système pour réduire le temps de séjour des deux populations + simu
 
-
-== Cas 6: Stratégies de Backup
-
-=== Paramètres
-
-- λ = 2.0 jobs/unité
-- μ = 3.0 (service principal)
-- μ_b = 10.0 (service backup)
-- c = 2 serveurs
-- Durée: 2000 unités
-
-
+/*
 = Synthèse et Observations
 
 == Stabilité des systèmes
@@ -295,8 +326,11 @@ TODO proposer un système pour réduire le temps de séjour des deux populations
 - *Politique ordonnancement*: FIFO plus équitable, PRIORITY favorise une population
 - *Gating*: impact majeur (+1900%) sur temps de réponse
 - *Nombre serveurs*: c=2 vs c=1 réduit fortement temps d'attente (0.04 vs 0.70)
+*/
 
 = Conclusion
+
+TODO donner des recommandations basées sur les résultats obtenus
 
 Les simulations démontrent que le système de moulinette peut être modélisé efficacement comme un réseau de files d'attente. Les paramètres critiques sont:
 - Le taux d'utilisation ρ pour la stabilité
