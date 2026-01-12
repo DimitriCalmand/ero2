@@ -1,0 +1,3 @@
+Scenario,Avg Response Time,Jobs Completed,Jobs Rejected
+Shared (M/M/2),753.3404891501688,35034,124758
+Partitioned (2 x M/M/1),742.821193401236,33547,126246

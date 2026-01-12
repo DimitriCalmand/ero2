@@ -264,6 +264,42 @@ Les simulations ont été effectuées sur deux jeux de données : un trafic synt
 
 3. *Recommandation* : Si le stockage ou la performance I/O du serveur de backup devient une contrainte (coût, lenteur), une stratégie aléatoire (ex: 50% ou 20%) est une option viable pour maintenir la fluidité du système sans sacrifier totalement l'historique. Cependant, avec un serveur de backup performant (μ=10), le coût du backup systématique reste négligeable pour l'expérience utilisateur (< 0.1s). Nous recommandons donc de maintenir un *backup systématique* tant que l'infrastructure le permet, pour garantir la complétude des données pédagogiques.
 
+=== Partitionnement et Coût/Performance
+
+Une stratégie alternative de gestion de la charge consiste à partitionner les serveurs en fonction du nom de l'exercice (déduit du tag). L'objectif théorique est d'améliorer la localité des données (cache). Cependant, cette approche brise le principe du "Work Stealing" (partage de charge).
+
+Nous avons comparé trois stratégies sur une infrastructure de 2 à 4 serveurs :
+1.  *Shared (Optimal)* : Pool de serveurs partagés (M/M/c).
+2.  *Partitionné Équilibré* : Répartition statique optimisée pour équilibrer la charge connue.
+3.  *Partitionné Naïf* : Répartition alphabétique (A-M, N-Z...) simulant une approche sans connaissance a priori.
+
+*Impact de l'augmentation des serveurs ($c=2 arrow 4$)* :
+
+#figure(
+  image("results/partitioning/partitioning_rejection.png", width: 80%),
+  caption: [Taux de rejet selon le nombre de serveurs et la stratégie]
+)
+
+==== Analyse des résultats
+
+1.  *Le coût de l'isolation* : À nombre de serveurs égal, la stratégie partagée est *toujours* supérieure.
+    - Pour $c=4$, le système partagé rejette *64%* des jobs (sous forte saturation).
+    - Le système partitionné "équilibré" en rejette *66%*.
+    - Le système "naïf" en rejette *70%*.
+    Le partitionnement introduit une rigidité : un serveur peut être inactif alors qu'un autre croule sous la charge d'une partition populaire.
+
+2.  *Inefficacité croissante* : Plus on ajoute de serveurs partitionnés, plus le risque de déséquilibre augmente.
+    - Avec $c=2$, le déséquilibre de charge du mode "Naïf" est de 12%.
+    - Avec $c=4$, ce déséquilibre monte à *49%* (certaines lettres sont beaucoup plus fréquentes).
+    Cela signifie qu'ajouter des serveurs partitionnés offre un rendement décroissant très rapide si la partition n'est pas parfaitement maintenue (ce qui est complexe et coûteux).
+
+==== Conclusion Coût/Bénéfice
+
+Le partitionnement statique est une stratégie *coûteuse et risquée*.
+- Pour atteindre la performance d'un cluster *Shared (c=3)*, il faudrait probablement déployer un cluster *Partitionné (c=4)* ou plus, augmentant les coûts d'infrastructure de 33% pour un résultat équivalent.
+- *Recommandation* : Conserver une architecture de serveurs banalisés (Shared Queue). Si des gains de cache sont nécessaires, préférez un "Sticky Routing" dynamique (Load Balancer intelligent) plutôt qu'un partitionnement statique rigide.
+
+
 == Cas 2: Channels et Dams
 
 === Implémentation
