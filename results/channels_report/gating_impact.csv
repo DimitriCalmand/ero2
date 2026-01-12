@@ -1,0 +1,5 @@
+Configuration,Population,Avg Response Time
+No Gating,PREPA,0.5597007328854946
+No Gating,ING,0.4826635045320084
+With Gating,PREPA,59.19504404564097
+With Gating,ING,58.03656291425762

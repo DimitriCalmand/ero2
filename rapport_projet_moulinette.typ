@@ -221,32 +221,48 @@ Il est à noter de quand le cadre de la Moulinette, il semble préférable de pr
 
 
 === Backup des résultats
-TODO tester si le backup influence les performances globales du système waterfall + taux de rejet front
 
-Ici, nous ajoutons la notion de backup des résultats des jobs traités. Celle-ci permet de sauvegarder les résultats sur un serveur dédié après traitement, afin d'assurer l'affichage ultérieur sur le front.
+Dans le système de la Moulinette, le backup correspond à la sauvegarde persistante des résultats d'exécution et des artefacts de tests. Cette étape intervient après l'exécution de la test-suite et avant (ou pendant) le retour d'information vers l'étudiant (Feedback).
 
-Même si cette fonctionnalité n'impacte pas directement le temps de traitement des jobs, elle peut influencer la charge globale du système et potentiellement les performances si le serveur de backup est surchargé.
+Nous avons modélisé cette étape comme une file d'attente intermédiaire insérée entre le serveur d'exécution et le serveur de feedback. Cette étape consomme des ressources et du temps. Le serveur de backup est configuré pour être performant (μ = 10.0 jobs/unité), mais il représente tout de même un point de passage obligé.
 
-Des backups probabilistes peuvent alors être mis en place pour économiser des ressources, au prix d'une couverture partielle des jobs sauvegardés. Un solution envisageant de sauvegarder avec une probabilité fonction de la charge du serveur de backup pourrait être intéressante à étudier.
+Trois stratégies ont été évaluées :
+- *Systematic* : 100% des jobs sont sauvegardés. Sécurité maximale des données.
+- *Random 50%* : 50% des jobs sont sauvegardés aléatoirement.
+- *Random 20%* : 20% des jobs sont sauvegardés.
 
-Dans ce scénario, nous avons introduit un serveur de backup pour sauvegarder les résultats des jobs traités. Le serveur principal a un taux de service de μ = 3.0 jobs/unité, tandis que le serveur de backup a un taux de service plus élevé de μ_b = 10.0 jobs/unité. Le système comporte c = 2 serveurs principaux.
+==== Résultats bruts
 
-Trois stratégies de backup ont été testées:
+Les simulations ont été effectuées sur deux jeux de données : un trafic synthétique intense (Saturation) et le trafic réel observé (Replay).
 
 #table(
   columns: (auto, auto, auto, auto),
-  [*Stratégie*], [*Avg Jobs traités*], [*Avg Jobs sauvegardés*], [*Avg Taux backup*],
-  [Systematic], [4002], [4002], [100.0%],
-  [Random 50%], [3934], [2013], [51.17%],
-  [Random 20%], [4000], [811], [20.28%]
+  [*Trafic*], [*Stratégie*], [*Temps Réponse (s)*], [*Impact relatif*],
+  [Synthétique], [Systematic], [13.19], [Ref],
+  [Synthétique], [Random 50%], [12.81], [-2.9%],
+  [Synthétique], [Random 20%], [12.47], [-5.5%],
+  [Réel], [Systematic], [1.88], [Ref],
+  [Réel], [Random 50%], [1.85], [-1.6%],
+  [Réel], [Random 20%], [1.81], [-3.7%]
 )
-
-Le temps de backup moyen reste stable (~0.10) pour toutes les stratégies. La stratégie systematic garantit la sauvegarde de tous les jobs, tandis que les stratégies probabilistes permettent d'économiser des ressources au prix d'une couverture partielle.
 
 #figure(
-  image("results/backup_scenario/response_time_by_type.png", width: 90%),
-  caption: [Temps de réponse selon la stratégie de backup]
+  image("results/backup_waterfall/backup_impact_time.png", width: 80%),
+  caption: [Temps de réponse moyen selon la stratégie de backup et le type de trafic]
 )
+
+#figure(
+  image("results/backup_waterfall/backup_impact_rejection.png", width: 80%),
+  caption: [Taux de rejet à l'entrée selon la stratégie de backup]
+)
+
+==== Analyse
+
+1. *Impact faible en charge normale* : Sur le trafic réel (faible intensité), l'ajout du backup systématique n'ajoute que ~0.08s au temps de réponse global par rapport à un backup partiel (20%). Cela correspond essentiellement au temps de service du backup lui-même (1/μ = 0.1s). Le système étant loin de la saturation, aucune file d'attente ne se forme au backup.
+
+2. *Gain notable en charge élevée* : Sous forte charge (synthétique), passer d'un backup systématique à un backup aléatoire (20%) permet de gagner environ 0.72s sur le temps de réponse moyen. Bien que le serveur de backup soit rapide, l'élimination de cette étape pour 80% des jobs réduit la friction globale dans le pipeline.
+
+3. *Recommandation* : Si le stockage ou la performance I/O du serveur de backup devient une contrainte (coût, lenteur), une stratégie aléatoire (ex: 50% ou 20%) est une option viable pour maintenir la fluidité du système sans sacrifier totalement l'historique. Cependant, avec un serveur de backup performant (μ=10), le coût du backup systématique reste négligeable pour l'expérience utilisateur (< 0.1s). Nous recommandons donc de maintenir un *backup systématique* tant que l'infrastructure le permet, pour garantir la complétude des données pédagogiques.
 
 == Cas 2: Channels et Dams
 
@@ -275,31 +291,52 @@ Le système gère deux populations avec des caractéristiques distinctes. Voici 
   [PRIORITY], [0.4679], [0.5920], [+26.5%]
 )
 
-FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs.
+#figure(
+  image("results/channels_report/policies_impact.png", width: 80%),
+  caption: [Impact de la politique d'ordonnancement sur le temps de réponse]
+)
 
-TODO faire la simu
+FIFO offre l'équité la plus proche entre populations (différence 16.0%). PRIORITY favorise ING au détriment de PREPA (+26.5% de différence). Les deux populations ont traité respectivement 3061 et 956 jobs. Bien que SJF offre théoriquement les meilleures performances globales, FIFO reste le meilleur compromis pour l'équité perçue par les étudiants.
 
-=== Gating
-Le gating introduit des périodes de fermeture pendant lesquelles une population ne peut pas accéder au système. Cela augmente drastiquement les temps de réponse:
+=== Gating (Barrage Temporel)
 
-- Population ING: λ = 1.5, μ = 2.5
-- Population PREPA: λ = 0.5, μ = 2.0
-- Serveurs: c = 2
-- Période de barrage: tb = 100
-- Durée d'ouverture: 50 unités
-- Intervalles de fermeture testés: [(0, 100), (150, 250), (300, 400)]
+Afin de réguler le flux dominant de la population ING ($lambda=1.5$), nous introduisons un mécanisme de barrage (Gating) sur la moulinette. Le protocole défini est le suivant : le système est fermé pour un temps $t_b$, puis ouvert pour $t_b/2$, et ce cycle se répète indéfiniment.
 
+==== Analyse du modèle ($t_b=100$, $t_"ouv"=50$)
+
+Nous avons simulé ce scénario avec $t_b=100$ (donc ouverture de 50 unités). Ce cycle impose un ratio d'ouverture de 0.5 (le système est fermé 66% du temps).
 
 #table(
   columns: (auto, auto, auto, auto),
   [*Population*], [*Sans gating*], [*Avec gating*], [*Augmentation*],
-  [ING], [0.4869], [9.8174], [+1916.4%],
-  [PREPA], [0.5519], [10.0912], [+1728.5%]
+  [ING], [0.48], [58.04], [+11991%],
+  [PREPA], [0.56], [59.20], [+10471%]
 )
 
-Pendant les périodes de fermeture, les jobs PREPA s'accumulent dans la file, créant un effet de "burst" lors de la réouverture. L'impact est massif sur les deux populations malgré que seule PREPA soit bloquée directement. L'impact est donc à prendre en compte sérieusement dans la conception du système.
+*Constat* : Ce modèle est catastrophique pour *les deux* populations.
+1.  *Saturation Structurelle* : Avec un ratio d'ouverture de 0.5, la capacité effective du système est divisée par 3. Or, la charge initiale $rho approx 0.8$ demandait déjà une disponibilité quasi-complète. Le système devient mathématiquement instable pendant les phases de fermeture.
+2.  *Effet de Burst* : Pendant la fermeture ($t_b=100$), ~150 jobs ING et ~50 jobs PREPA s'accumulent. La fenêtre d'ouverture (50 unités) est mathématiquement trop courte pour traiter ce stock (200 jobs nécessiteraient ~100 unités de temps de traitement à pleine capacité).
 
-TODO proposer un système pour réduire le temps de séjour des deux populations + simu
+==== Proposition d'un système optimisé
+
+Pour répondre à l'objectif de *minimiser le temps de séjour moyen pour les deux populations* tout en maintenant une régulation, nous proposons un système de "Micro-Gating équilibré".
+
+Ce nouveau système repose sur deux ajustements critiques :
+1.  *Inversion du Ratio* : Le système doit être ouvert plus longtemps qu'il n'est fermé pour absorber la charge. Nous proposons un ratio ouverture/fermeture de *1.5* (au lieu de 0.5).
+2.  *Haute Fréquence (Micro-Gating)* : Réduire drastiquement $t_b$ pour éviter l'accumulation massive. Nous fixons $t_b = 20$.
+
+*Configuration proposée :* Fermeture 20 unités, Ouverture 30 unités.
+
+#figure(
+  image("results/channels_report/gating_impact_heatmaps.png", width: 90%),
+  caption: [Optimisation Gating : L'impact est minimisé pour des durées de blocage faibles ($t_b < 40$) et un ratio > 1]
+)
+
+*Résultats comparatifs :*
+- Temps de réponse moyen ING : ~7.4s (contre 58s).
+- Temps de réponse moyen PREPA : ~7.6s (contre 59s).
+
+Ce système divise par 8 le temps d'attente par rapport au modèle initial, offrant un compromis viable entre régulation et performance.
 
 /*
 = Synthèse et Observations
@@ -330,11 +367,18 @@ TODO proposer un système pour réduire le temps de séjour des deux populations
 
 = Conclusion
 
-TODO donner des recommandations basées sur les résultats obtenus
+Les simulations effectuées tout au long de ce projet permettent de valider la modélisation de la moulinette comme un réseau de files d'attente, offrant une précision remarquable par rapport aux modèles théoriques.
 
-Les simulations démontrent que le système de moulinette peut être modélisé efficacement comme un réseau de files d'attente. Les paramètres critiques sont:
-- Le taux d'utilisation ρ pour la stabilité
-- Les capacités des files pour gérer les pics
-- La politique d'ordonnancement pour l'équité
-- La gestion temporelle (gating) qui a l'impact le plus significatif
+Voici nos recommandations finales pour l'architecture du système :
+
+1.  *Dimensionnement (Waterfall)* : Pour le pipeline d'exécution, nous recommandons des files d'attente d'une capacité de *20 places* ($k_s=k_f=20$). Ce paramétrage offre le meilleur compromis, minimisant les rejets (< 0.2%) tout en maintenant un temps de réponse stable, absorbant efficacement les pics de charge naturels.
+
+2.  *Stratégie de Fiabilité (Backup)* : Le *backup systématique* est la stratégie à privilégier. Nos résultats montrent que son coût en performance est négligeable (< 0.1s) en conditions normales. Les stratégies aléatoires ne devraient être envisagées qu'en cas de saturation critique des IOPS disque.
+
+3.  *Politique d'Ordonnancement* : La politique *FIFO* reste la plus équitable pour gérer les flux hétérogènes (ING/PREPA). Les politiques de priorité ou SJF créent des inégalités de traitement trop importantes (jusqu'à +26% de délai pour les PREPA) sans gain global significatif.
+
+4.  *Régulation (Gating)* : C'est le point critique du système. L'approche naïve de "blocage long" est à proscrire absolument, car elle provoque un effondrement des performances (+10 000% de délai).
+    Nous recommandons impérativement une stratégie de *Micro-Gating* (cycles courts, $t_b approx 20$) associée à un ratio de récupération positif (temps d'ouverture > temps de fermeture). Cette approche permet de réguler le flux pour la maintenance tout en divisant par 8 le temps d'attente par rapport aux cycles longs.
+
+En conclusion, la performance de la moulinette ne dépend pas uniquement de la puissance brute des serveurs, mais surtout de la *finesse des politiques de régulation* temporelle.
 
