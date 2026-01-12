@@ -29,9 +29,9 @@
   #v(1em)
   #text(2.5em, strong("Moulinette en tant que Système de File d'Attente"))
   #v(3em)
-  #text(1.2em, "Auteurs :")
+  #text(1.2em, "Aleksei Kotliarov, Anthony Caron, Dimitri Calmand, Hugo Schreiber, Maxime Cambou, Quentin Prunet")
   #v(0.5em)
-  #text(1.2em, "Date : Janvier 2026") // Static date for template
+  #text(1.2em, "Janvier 2026") // Static date for template
   #v(5em)
   #text(1em, "EPITA")
 ]
@@ -70,7 +70,7 @@ Un étudiant code les réponses à des exercices dans un repository git dédié.
 Afin de modéliser le système de moulinette, nous avons développé un moteur de simulation à événements discrets en Python utilisant la bibliothèque SimPy pour la gestion du temps. Ce moteur permet de simuler divers scénarios de files d'attente avec des paramètres configurables tels que le taux d'arrivée, le taux de service, le nombre de serveurs, et les politiques d'ordonnancement. Les classes principales sont décrites ci-dessous, de manière synthétique.
 
 == Job
-Un job représente une unité de travail dans le système de moulinette. Chaque job est donc associé à un push tag déclenchant l'exécution de la testsuite. Un job possède notammnet les attributs suivants :
+Un job représente une unité de travail dans le système de moulinette. Chaque job est donc associé à un push tag déclenchant l'exécution de la testsuite. Un job possède notamment les attributs suivants :
 #list(
   [Un identifiant unique.],
   [Un temps d'arrivée (arrival_time).],
@@ -176,7 +176,7 @@ Après simulation du système waterfall avec files infinies, nous obtenons les r
   columns: (auto, auto, auto),
   [*Métrique*], [*Simulation c=1*], [*Simulation c=3*],
   [*Avg Temps de séjour (unités de tps)*], [2.11], [2.01],
-  [*Avg ariance Temps de séjour*], [10.89], [13.71],
+  [*Avg Variance Temps de séjour*], [10.89], [13.71],
   [*NB jobs traités*], [159 833], [159 833],
   [*Taux de rejet*], [0.0%], [0.0%]
 )
@@ -188,7 +188,7 @@ Comme prévu, le système ne rejète aucun job avec des files infinies. Le temps
 On constate donc que l'ajout de serveurs d'exécution réduit le temps de séjour que marginalement dans ce contexte. Le risque le plus important détecté dans ce modèle est le délai imprévisible. En effet, on remarque une variance importante du temps de séjour (10.89 avec c=1, 13.71 avec c=3). Cela peut poser problème pour l'expérience utilisateur, car un étudiant pourrait attendre longtemps pour obtenir un retour. Ce comportement peut donc être une source de frustration et réduire la variance du temps de séjour est un objectif important.
 
 === Système avec files finies
-Pour un système plus réaliste, nous introduisons les paramètres ks et kf des files finies. Les paramèters de base restent les mêmes que pour le système naïf.
+Pour un système plus réaliste, nous introduisons les paramètres ks et kf des files finies. Les paramètres de base restent les mêmes que pour le système naïf.
 Le but est de comprendre l'impact des capacités des files sur les performances globales du système, notamment le taux de rejet et le temps de séjour.
 
 ==== Analyse de ks
@@ -217,7 +217,7 @@ Ici on garde ks large (20) pour se concentrer sur l'impact de kf (capacité de l
 
 Le bottleneck se situe généralement au niveau du feedback (μ_feed < μ_exec). Augmenter kf améliore le temps de séjour, tandis qu'augmenter ks réduit les rejets à l'entrée. On remarque que des valeurs conseillées pour ks et kf se situent autour de 20 pour minimiser les rejets tout en gardant un temps de séjour raisonnable.
 
-Il est à noter de quand le cadre de la Moulinette, il semble préférable de prioriser *un faible taux de rejet* (expérience utilisateur) au détriment d'un temps de séjour plus long. En effet, un étudiant préférera attendre plus longtemps pour obtenir un retour plutôt que de voir son tag rejeté et devoir le re-soumettre.
+Il est à noter que quand le cadre de la Moulinette, il semble préférable de prioriser *un faible taux de rejet* (expérience utilisateur) au détriment d'un temps de séjour plus long. En effet, un étudiant préférera attendre plus longtemps pour obtenir un retour plutôt que de voir son tag rejeté et devoir le re-soumettre.
 
 
 === Backup des résultats
